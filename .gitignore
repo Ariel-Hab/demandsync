@@ -1,0 +1,41 @@
+# Datos reales — NUNCA se commitean (ver datasets/README.md)
+datasets/*
+!datasets/README.md
+!datasets/sintetico/
+*.db
+*.sqlite
+*.dump
+
+# Secretos y entorno
+.env
+.env.*
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+*.egg-info/
+.pytest_cache/
+
+# Modelos entrenados y experimentos
+*.pkl
+*.joblib
+*.onnx
+mlruns/
+modelos/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+
+# SO / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+nul
