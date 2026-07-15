@@ -68,13 +68,13 @@ Este repo se comparte entre personas de dentro y fuera de la empresa cliente. Po
 
 *(Instrucción para el agente: al cerrar una sesión de trabajo relevante, actualizá SOLO esta sección con el estado y los pendientes accionables, con fecha. Mantenela corta — máx ~15 líneas; el detalle va en `planning/roadmap.md`.)*
 
-**Última actualización:** 2026-07-15 — repo creado.
+**Última actualización:** 2026-07-15 — EDA real hecho + contrato de ingesta v0.9.
 
-- Release actual: **R0 — Validación y diseño** (ver `planning/roadmap.md` para la tabla completa de tareas).
-- Hecho: estructura del repo, docs base, ADR-001..008, informe de viabilidad del motor y plan de diseño M0–M4.
+- Release actual: **R0 — Validación y diseño** (ver `planning/roadmap.md`).
+- Hecho: repo publicado en GitHub; docs base + ADR-001..008; viabilidad y plan del motor; **EDA sobre datos reales** (`motor/eda/eda-2026-07-15.md`: 96 meses desde 2018-07, ~2.200 productos activos, 48/31/10/11% de cuadrantes de intermitencia, 25,4% de productos sin ancla propia, 53,5% de pares cliente×producto con ≤2 compras en 36m); **contrato de ingesta v0.9** (`docs/contrato-ingesta.md`) con mapeo al esquema real.
 - Pendientes inmediatos:
-  - Ratificar en equipo **ADR-007** (unidades como target) y **ADR-008** (WAPE/MASE en vez de MAPE) — impactan DER y plan de pruebas.
-  - Incorporar correcciones C1–C8 al DER (drawio + doc) y T1–T6/CP-* al plan de pruebas (Analista Funcional).
-  - Congelar el contrato JSON de ingesta campo a campo (Analista + Backend + lado cliente).
-  - EDA sobre datos reales (máquina autorizada) + generador de dataset sintético (ML Specialist).
+  - Resolver **P1–P4 del contrato** (semántica `estadistica`/dedup, lotes, `precio` con/sin descuento, criterio `activo`) → congela v1.0.
+  - Ratificar en equipo **ADR-007** y **ADR-008** — impactan DER y plan de pruebas.
+  - Correcciones C1–C8 al DER y T1–T6/CP-* al plan de pruebas (Analista Funcional).
+  - Generador de dataset sintético (parámetros ya calibrados por el EDA — §8 del reporte).
 - Sin código de aplicación todavía; no arrancar R1 hasta congelar el contrato de ingesta.

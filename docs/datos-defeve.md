@@ -12,11 +12,13 @@
 
 | Dato | Detalle | Profundidad |
 |---|---|---|
-| Ventas históricas | `factura` + `producto_factura`, `remito` + `producto_remito` (renglón: producto, cantidad, precio real con descuento) | **Desde sept-2018 (~96 meses ≈ 8 años)** |
-| Padrón de clientes | ~1.500 clientes con código ERP, zona, alta | Completo |
-| Catálogo / vademécum | Productos con categoría, laboratorio, precio de lista **vigente** | Completo (orden de magnitud: ~2.600 productos) |
-| Stock y lotes | Cantidad disponible y fecha de vencimiento **vigentes** (foto actual) | Solo dato actual |
+| Ventas históricas | `factura` + `producto_factura`, `remito` + `producto_remito` (renglón: producto, cantidad, precio real con descuento) | **Desde jul-2018 → 96 meses completos** (EDA 2026-07-15); 1,14M facturas / 5,46M renglones |
+| Padrón de clientes | 5.057 clientes en padrón; **1.399 activos** últimos 12m (1.779 en 36m) | Completo |
+| Catálogo / vademécum | 10.533 entradas (incluye deshabilitados/servicios); **~2.200–2.400 productos con venta reciente**; categoría, familia, laboratorio, acción terapéutica, precio de lista **vigente** | Completo |
+| Stock y lotes | `stock_actual/reservado/pedido` por producto (foto); `fecha_vencimiento` por renglón de venta (completitud a medir) | Solo dato actual |
 | Features de cliente | Segmento operacional determinístico, categoría principal, frecuencia, volumen anual, etc. (módulo Analytics) | Calculadas a demanda |
+
+> Perfil estadístico completo (intermitencia, cobertura de ancla, dedup): `../motor/eda/eda-2026-07-15.md`.
 
 ## Qué NO HAY (confirmado — diseñar alrededor de esto)
 
@@ -31,29 +33,21 @@
 
 ## Trampas de los datos (obligatorio mitigarlas en la ingesta)
 
-1. **Doble conteo factura/remito**: una misma venta puede existir como remito y luego factura. La ingesta DEBE deduplicar (`tipo_comprobante` + regla factura-anula-remito). Sin esto, toda la serie temporal queda inflada (ADR-003, caso CP-DEDUP-01).
+1. **Doble conteo factura/remito**: una misma venta podría existir como remito y luego factura. Hallazgo EDA 2026-07-15: no hay FK remito→factura en el esquema; el propio ERP computa estadística como **unión de ambas fuentes** filtrando el flag `estadistica ∈ {P,N}`, y el share de remitos cayó de ~80% (2018-2020) a ~5-15% (2024+). La regla definitiva de dedup queda pendiente de confirmar la semántica de `estadistica` con el dueño del ERP (contrato P1; ADR-003, caso CP-DEDUP-01).
 2. **Inflación argentina**: 8 años de montos nominales en pesos no son comparables. Deflactar con IPC macro **borra los descuentos individuales por cliente** — usar el índice implícito por producto (ADR-002, casos CP-INF-*).
 3. **Precios basura**: existen precios rotos (`0.01`, `3.20`). Clamp de ratios al construir índices para que un precio roto no dispare el índice de una categoría entera.
 4. **Eventos históricos**: el período 2018–2026 incluye COVID (2020), devaluaciones y picos inflacionarios. El motor debe poder marcar/excluir períodos anómalos (dummies de evento).
 
 ## Contrato de ingesta (a congelar antes del Release 1)
 
-Export JSON desde el snap, por entidad. Esquema preliminar (el detalle campo a campo se define con el Analista Funcional):
-
-| Archivo | Granularidad | Contenido mínimo |
-|---|---|---|
-| `ventas_YYYYMM.json` | Renglón de comprobante | tipo_comprobante, nro, fecha, cliente_erp, producto_sku, cantidad, precio_unitario, subtotal, remito_asociado (si factura) |
-| `clientes.json` | Cliente | codigo_erp, razón social, zona, localidad, fecha_alta, activo |
-| `productos.json` | Producto | sku, nombre, categoría, laboratorio, precio_lista vigente, unidad, requiere_frio, activo |
-| `stock_lotes.json` | Lote (foto actual) | producto_sku, nro_lote, vencimiento, ingreso, cantidad_disponible, fecha_foto |
-| `cliente_features.json` | Cliente | segmento_operacional, categoria_principal, frecuencia_compra, volumen_anual, recency_dias, fecha_calculo |
+**El contrato campo a campo, con mapeo al esquema real del ERP, está en [`contrato-ingesta.md`](contrato-ingesta.md) (v0.9).** Para congelar v1.0 faltan 4 confirmaciones del lado del ERP (P1 dedup, P2 lotes, P3 semántica de `precio`, P4 criterio de `activo`).
 
 Notas:
-- El histórico completo 2018→ se exporta **una vez** (backfill); después, export incremental mensual.
+- El histórico completo 2018-07→ se exporta **una vez** (backfill); después, export incremental mensual.
 - Quién genera los exports: el lado DFV (acceso al snap). El equipo DemandSync recibe además una versión **sintética/anonimizada** para desarrollo (ver `datasets/README.md`).
 - Alternativa a archivos para producción futura: feed vía API con api-key (el cliente ya tiene ese mecanismo); no cambia el esquema lógico.
 
-## Escala esperada
+## Escala esperada (calibrada con EDA 2026-07-15)
 
-- Hechos mensuales por producto: ~2.600 × 96 ≈ **250 mil filas**.
-- Hechos mensuales cliente×producto: acotado por combinaciones con venta (sparse); estimación gruesa < 2–3 millones de filas. PostgreSQL lo maneja sin arquitectura especial; el `<2s` se garantiza consultando las tablas mensuales, nunca el crudo.
+- Hechos mensuales por producto: ~2.400 activos × 96 ≈ **230 mil filas**.
+- Hechos mensuales cliente×producto: 319 mil pares con actividad en 36m, mayoría con 1–2 meses de compra → orden de **1–2 millones de filas** para los 96 meses. PostgreSQL lo maneja sin arquitectura especial; el `<2s` se garantiza consultando las tablas mensuales, nunca el crudo.

@@ -38,7 +38,11 @@ monto_real = revenue_cliente,t × (precio_prom_producto_hoy / precio_prom_produc
 
 **Contexto:** el ERP registra ventas como remito y luego factura; ingerir ambos duplica ventas y distorsiona toda la serie.
 
-**Decisión:** `VENTA.tipo_comprobante` obligatorio + regla de deduplicación en la ingesta (factura anula remito asociado). Caso de prueba CP-DEDUP-01. Contingencia MVP: ingerir solo facturas y documentar cobertura parcial.
+**Decisión:** `VENTA.tipo_comprobante` obligatorio + regla de deduplicación en la ingesta. Caso de prueba CP-DEDUP-01. Contingencia MVP: ingerir solo facturas y documentar cobertura parcial.
+
+**Actualización 2026-07-15 (EDA):** el esquema real no tiene FK remito→factura; el propio ERP computa estadística como unión de ambas fuentes filtrando `estadistica ∈ {P,N}` (es decir, la dedup parece resuelta aguas arriba), y el share de remitos es hoy ~5-15% del revenue. La regla concreta queda **pendiente P1 del contrato de ingesta**: confirmar la semántica de `estadistica` con el dueño del ERP antes de congelar v1.0. La corrección C6 del DER (`tipo_comprobante`) sigue vigente igual.
+
+**Docs impactados:** `contrato-ingesta.md` (P1), Plan de Pruebas (CP-DEDUP-01: el caso debe testear la regla que se confirme, no asumir "factura anula remito").
 
 ---
 

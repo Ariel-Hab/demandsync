@@ -16,15 +16,16 @@
 
 | Dimensión | Dataset cliente 1 | Lectura |
 |---|---|---|
-| Historia | ~96 meses (2018-09→) | Excelente para frecuencia mensual: 8 ciclos estacionales completos. La mayoría de los casos publicados de farma/distribución trabajan con 21–24 meses |
-| Series | ~2.600 productos; ~1.500 clientes | Escala media: suficiente para un modelo global ML (cross-learning), lejos de necesitar infra distribuida |
+| Historia | 96 meses completos (2018-07→, confirmado por EDA) | Excelente para frecuencia mensual: 8 ciclos estacionales completos. La mayoría de los casos publicados de farma/distribución trabajan con 21–24 meses |
+| Series | ~2.200–2.400 productos activos (catálogo total 10,5k); ~1.400 clientes activos 12m | Escala media: suficiente para un modelo global ML (cross-learning), lejos de necesitar infra distribuida |
 | Grano | Renglón de comprobante → mensualizable | Correcto. El diseño (hechos mensuales inmutables) es exactamente la práctica recomendada |
 | Exógenas | Clima/macro (mock), inflación implícita en precios | Ver §3.4 |
 | Stock | Solo foto actual | No afecta el motor de demanda; afecta las capas de negocio (ya resuelto por ADR-004) |
 
-**Clasificación esperada de las series** (a confirmar con el EDA de R0, taxonomía Syntetos-Boylan por ADI/CV²):
-- **Nivel producto-mes:** mezcla de series suaves (alta rotación) e intermitentes (cola larga del vademécum).
-- **Nivel cliente×producto-mes:** mayormente intermitente/lumpy — la mayoría de los pares tendrá muchos meses en cero. Esto NO es un defecto de los datos; es la naturaleza del negocio mayorista, y define la estrategia de modelado (§3.2).
+**Clasificación de las series** (✅ CONFIRMADA por el EDA del 2026-07-15 — ver `eda/eda-2026-07-15.md`, taxonomía Syntetos-Boylan por ADI/CV² en ventana 36m):
+- **Nivel producto-mes:** 47,8% suaves, 30,9% intermitentes, 10,1% erráticas, 11,1% lumpy → ~48% admite métodos clásicos con buena señal y ~42% requiere la rama Croston/SBA/TSB.
+- **Nivel cliente×producto-mes:** confirmado mayormente intermitente — 53,5% de los 319k pares activos compró en ≤2 de 36 meses; solo ~12% tiene ≥12 meses de señal. Esto NO es un defecto de los datos; es la naturaleza del negocio mayorista, y define la estrategia de modelado (§3.2: P(compra) + tamaño esperado).
+- **Ancla de deflación:** 25,4% de los productos activos 24m no tiene venta en los últimos 3 meses → el fallback categoría/laboratorio es camino frecuente, no caso borde.
 
 ## 2. Qué dice el estado del arte (evidencia)
 
