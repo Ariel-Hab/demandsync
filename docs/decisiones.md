@@ -40,9 +40,11 @@ monto_real = revenue_cliente,t × (precio_prom_producto_hoy / precio_prom_produc
 
 **Decisión:** `VENTA.tipo_comprobante` obligatorio + regla de deduplicación en la ingesta. Caso de prueba CP-DEDUP-01. Contingencia MVP: ingerir solo facturas y documentar cobertura parcial.
 
-**Actualización 2026-07-15 (EDA):** el esquema real no tiene FK remito→factura; el propio ERP computa estadística como unión de ambas fuentes filtrando `estadistica ∈ {P,N}` (es decir, la dedup parece resuelta aguas arriba), y el share de remitos es hoy ~5-15% del revenue. La regla concreta queda **pendiente P1 del contrato de ingesta**: confirmar la semántica de `estadistica` con el dueño del ERP antes de congelar v1.0. La corrección C6 del DER (`tipo_comprobante`) sigue vigente igual.
+**Actualización 2026-07-15 (EDA):** el esquema real no tiene FK remito→factura; el propio ERP computa estadística como unión de ambas fuentes filtrando `estadistica ∈ {P,N}` (es decir, la dedup parece resuelta aguas arriba), y el share de remitos es hoy ~5-15% del revenue.
 
-**Docs impactados:** `contrato-ingesta.md` (P1), Plan de Pruebas (CP-DEDUP-01: el caso debe testear la regla que se confirme, no asumir "factura anula remito").
+**Actualización 2026-07-15 (frontera de responsabilidad — reemplaza el mecanismo):** el cliente entrega un feed de **ventas unificadas** ya deduplicado; la unión factura/remito, los criterios estadísticos del ERP y la dedup son responsabilidad del **exportador del lado cliente** (P1 del contrato). Consecuencias: (a) DemandSync no re-deduplica — valida garantías y rechaza el archivo si fallan; (b) `VENTA.tipo_comprobante` deja de ser necesario en el DER de DemandSync (la parte de C6 sobre ese atributo queda sin efecto; la parte de "regla de deduplicación" pasa a ser una **garantía de origen** del contrato); (c) CP-DEDUP-01 se reformula: testea que la ingesta detecte/rechace un feed que viole la garantía, con datos sintéticos.
+
+**Docs impactados:** `contrato-ingesta.md` (§1 y P1 — hecho 2026-07-15), DER UTN (retirar `tipo_comprobante` de VENTA o marcarlo opcional-informativo; anotar la garantía de origen), Plan de Pruebas (CP-DEDUP-01 reformulado como validación de garantía).
 
 ---
 

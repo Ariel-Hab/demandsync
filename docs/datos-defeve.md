@@ -33,7 +33,7 @@
 
 ## Trampas de los datos (obligatorio mitigarlas en la ingesta)
 
-1. **Doble conteo factura/remito**: una misma venta podría existir como remito y luego factura. Hallazgo EDA 2026-07-15: no hay FK remito→factura en el esquema; el propio ERP computa estadística como **unión de ambas fuentes** filtrando el flag `estadistica ∈ {P,N}`, y el share de remitos cayó de ~80% (2018-2020) a ~5-15% (2024+). La regla definitiva de dedup queda pendiente de confirmar la semántica de `estadistica` con el dueño del ERP (contrato P1; ADR-003, caso CP-DEDUP-01).
+1. **Doble conteo factura/remito**: una misma venta podría existir como remito y luego factura. Hallazgo EDA 2026-07-15: no hay FK remito→factura en el esquema; el propio ERP computa estadística como **unión de ambas fuentes** filtrando el flag `estadistica ∈ {P,N}`, y el share de remitos cayó de ~80% (2018-2020) a ~5-15% (2024+). **Frontera (2026-07-15):** esta trampa la resuelve el **exportador del lado cliente** — DemandSync recibe ventas unificadas ya deduplicadas y solo valida las garantías del contrato (P1; ADR-003 actualizada; CP-DEDUP-01 reformulado).
 2. **Inflación argentina**: 8 años de montos nominales en pesos no son comparables. Deflactar con IPC macro **borra los descuentos individuales por cliente** — usar el índice implícito por producto (ADR-002, casos CP-INF-*).
 3. **Precios basura**: existen precios rotos (`0.01`, `3.20`). Clamp de ratios al construir índices para que un precio roto no dispare el índice de una categoría entera.
 4. **Eventos históricos**: el período 2018–2026 incluye COVID (2020), devaluaciones y picos inflacionarios. El motor debe poder marcar/excluir períodos anómalos (dummies de evento).

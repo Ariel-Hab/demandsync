@@ -72,8 +72,9 @@ Este repo se comparte entre personas de dentro y fuera de la empresa cliente. Po
 
 - Release actual: **R0 — Validación y diseño** (ver `planning/roadmap.md`).
 - Hecho: repo publicado en GitHub; docs base + ADR-001..008; viabilidad y plan del motor; **EDA sobre datos reales** (`motor/eda/eda-2026-07-15.md`: 96 meses desde 2018-07, ~2.200 productos activos, 48/31/10/11% de cuadrantes de intermitencia, 25,4% de productos sin ancla propia, 53,5% de pares cliente×producto con ≤2 compras en 36m); **contrato de ingesta v0.9** (`docs/contrato-ingesta.md`) con mapeo al esquema real.
+- Frontera acordada 2026-07-15: el cliente entrega **ventas unificadas** (la unión factura/remito y la dedup son del exportador del lado cliente); DemandSync valida garantías, no re-deduplica. `tipo_comprobante` retirado del contrato y del DER.
 - Pendientes inmediatos:
-  - Resolver **P1–P4 del contrato** (semántica `estadistica`/dedup, lotes, `precio` con/sin descuento, criterio `activo`) → congela v1.0.
+  - Resolver **P1–P4 del contrato** (P1 = exportador unificado del lado cliente, lotes, `precio` con/sin descuento, criterio `activo`) → congela v1.0.
   - Ratificar en equipo **ADR-007** y **ADR-008** — impactan DER y plan de pruebas.
   - Correcciones C1–C8 al DER y T1–T6/CP-* al plan de pruebas (Analista Funcional).
   - Generador de dataset sintético (parámetros ya calibrados por el EDA — §8 del reporte).

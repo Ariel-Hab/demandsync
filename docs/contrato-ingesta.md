@@ -14,41 +14,43 @@
 
 ---
 
-## 1. `ventas_<AAAAMM>.json` — comprobantes de venta (cabecera + renglones)
+## 1. `ventas_<AAAAMM>.json` — ventas unificadas
 
-Una entrada por comprobante, con renglones embebidos. Cubre **dos fuentes** del ERP: facturas y remitos.
+> **Frontera de responsabilidad (2026-07-15):** el cliente entrega un feed de **ventas ya consolidado**. La unión factura/remito, la deduplicación, los criterios estadísticos del ERP (`estadistica`, productos no numéricos) y el neteo lógico son responsabilidad del **exportador del lado cliente** (se diseña en su sistema satélite; contrato a refinar con ese equipo). DemandSync **no conoce ni le importa** el tipo de comprobante de origen y NO re-deduplica.
 
-| Campo JSON | Tipo | Origen ERP | Nota |
-|---|---|---|---|
-| `tipo_comprobante` | string | fuente: `"factura"` \| `"remito"` | Obligatorio (ADR-003) |
-| `tipo` | string | `factura.tipo` / `remito.tipo` | Parte de la clave del comprobante en el ERP |
-| `numero` | int | `factura.numero` / `remito.numero` | Clave junto con `tipo` |
-| `fecha` | date | `factura.fecha` | |
-| `cliente_id` | string | `factura.cliente_id` | Código ERP del cliente |
-| `nota_credito` | bool | `factura.nota_credito` | `true` → las cantidades restan (~9,5% de facturas) |
-| `total` | decimal | `factura.total` | Para validación de consistencia contra renglones |
-| `zona` | string/null | `factura.zona` | Dimensión geográfica opcional |
-| `vendedor_id` | string/null | `factura.vendedor_id` | Opcional (analítica comercial) |
-| `renglones` | array | `producto_factura` / `producto_remito` | ≥1 |
+Una entrada por venta, con renglones embebidos:
+
+| Campo JSON | Tipo | Nota |
+|---|---|---|
+| `venta_ref` | string | Identificador único y estable de la venta en el origen (opaco para DemandSync; habilita idempotencia y re-export) |
+| `fecha` | date | |
+| `cliente_id` | string | Código ERP del cliente |
+| `total` | decimal | Para validación de consistencia contra renglones |
+| `zona` | string/null | Dimensión geográfica opcional |
+| `vendedor_id` | string/null | Opcional (analítica comercial) |
+| `renglones` | array | ≥1 |
 
 Renglón:
 
-| Campo JSON | Tipo | Origen ERP | Nota |
-|---|---|---|---|
-| `producto_id` | string | `pf.producto_id` | Alfanuméricos = servicios/conceptos → la ingesta los descarta (regla: solo numéricos) |
-| `cantidad` | decimal | `pf.cantidad` | |
-| `precio` | decimal | `pf.precio` | Precio unitario efectivo aplicado (con descuento) |
-| `descuento` | decimal/null | `pf.descuento` | Informativo; validar si `precio` ya lo incluye (§Pendientes P3) |
-| `bonificacion` | decimal/null | `pf.bonificacion` | Idem |
-| `estadistica` | string/null | `pf.estadistica` | `''`/`S`/`P`/`N` — la ingesta excluye `P` y `N` (regla del ERP) |
-| `fecha_vencimiento` | date/null | `pf.fecha_vencimiento` | Vencimiento por renglón; completitud a medir (EDA §7) |
+| Campo JSON | Tipo | Nota |
+|---|---|---|
+| `producto_id` | string | Código del vademécum del ERP |
+| `cantidad` | decimal | **Negativa para devoluciones/notas de crédito** — DemandSync suma con signo al mensualizar |
+| `precio` | decimal | Precio unitario **efectivo** (con descuento aplicado) — garantía del exportador (P3) |
+| `fecha_vencimiento` | date/null | Vencimiento por renglón; completitud a medir (EDA §7) |
+
+**Garantías del exportador (lado cliente — parte del contrato):**
+1. Sin doble conteo factura/remito (dedup resuelta en origen).
+2. Solo renglones estadísticos según los criterios del propio ERP (excluye `estadistica ∈ {P,N}`, servicios/conceptos no numéricos).
+3. `precio` = unitario efectivo con descuento; `precio > 0`.
+4. Devoluciones/notas de crédito incluidas con `cantidad` negativa (~9,5% de los comprobantes son NC).
+5. El mes exportado está contablemente cerrado; re-export del mismo mes reemplaza al anterior (idempotencia por `venta_ref`).
 
 **Reglas de ingesta (DemandSync, testeables):**
-1. Descartar renglones con `producto_id` no numérico, `estadistica ∈ {P, N}`, `precio ≤ 0`.
-2. `nota_credito = true` → cantidad y revenue restan.
-3. **Dedup factura/remito:** regla exacta pendiente de confirmación con el dueño del ERP (ver Pendientes P1). Mientras tanto vale el criterio del propio ERP: unión de ambas fuentes con los filtros de arriba.
-4. Materializar `HECHO_VENTA_MENSUAL_PRODUCTO` y `HECHO_VENTA_MENSUAL_CLIENTE_PRODUCTO` (ADR-001) tras validar el mes.
-5. Validación de consistencia: `Σ renglones ≈ total` de cabecera (tolerancia por IVA/redondeo a definir con datos).
+1. Validar esquema, tipos y rangos; rechazar y loguear en `PROCESO_INGESTA` lo inválido.
+2. Validación de consistencia: `Σ renglones ≈ total` por venta (tolerancia por IVA/redondeo a definir con datos) + totales del mes contra resumen declarado por el exportador.
+3. Materializar `HECHO_VENTA_MENSUAL_PRODUCTO` y `HECHO_VENTA_MENSUAL_CLIENTE_PRODUCTO` (ADR-001) tras validar el mes.
+4. **No re-deduplicar ni re-filtrar por reglas del ERP**: si una garantía del exportador falla, la ingesta rechaza el archivo y lo reporta — no lo "arregla" en silencio.
 
 ## 2. `clientes_full.json` — padrón (upsert)
 
@@ -118,9 +120,9 @@ El catálogo completo tiene ~10,5k entradas pero solo ~2,2–2,4k con venta reci
 
 | # | Pendiente | Responsable | Bloquea |
 |---|---|---|---|
-| P1 | Semántica del flag `estadistica` y ciclo remito→facturación → regla de dedup definitiva (hoy: criterio del ERP, unión con filtros) | Lado cliente (acceso al ERP) | Regla 3 de ingesta |
+| P1 | Diseño del **exportador de ventas unificadas** en el sistema del cliente (dedup interna, semántica de `estadistica`, generación de `venta_ref`) — fuera del alcance de DemandSync; v1.0 se congela junto con la primera versión del exportador | Lado cliente | §1 completo |
 | P2 | Fuente real de lotes/vencimientos: ¿tabla de lotes trazables? ¿completitud de `fecha_vencimiento` por renglón? | Lado cliente | §4 `lotes`, CU-06 |
-| P3 | Confirmar si `precio` de renglón ya incluye descuento/bonificación (validar `Σ renglones` vs `total`) | Lado cliente + Analista | Exactitud del índice implícito |
+| P3 | Garantía "precio efectivo con descuento": confirmar si `precio` de renglón ya lo incluye (validar `Σ renglones` vs `total`) | Lado cliente + Analista | Exactitud del índice implícito |
 | P4 | Criterio de `activo` en clientes | Analista | §2 |
 
 Cerrados estos cuatro puntos, este documento pasa a **v1.0 — CONGELADO** y cualquier cambio posterior es versionado (v1.1, v2.0) con actualización del ETL y de los docs UTN (regla "Documentación del TP siempre al día", CLAUDE.md §6).

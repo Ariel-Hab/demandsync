@@ -15,7 +15,7 @@ Fase pre-código. Objetivo: que cada módulo tenga contrato, plan y criterio de 
 | Plan de diseño del motor (`motor/plan-diseno.md`) | ML Specialist | ✅ 2026-07-15 |
 | Ratificar ADR-007 (unidades como target) y ADR-008 (métricas) | Equipo | ⬜ |
 | Contrato JSON de ingesta campo a campo (`docs/contrato-ingesta.md`) | Analista + Backend + lado cliente | 🟡 v0.9 redactado (2026-07-15); congelar v1.0 requiere resolver P1–P4 |
-| Resolver P1–P4 del contrato (dedup/`estadistica`, lotes, semántica `precio`, criterio `activo`) | Lado cliente + Analista | ⬜ |
+| Resolver P1–P4 del contrato (P1 = **exportador de ventas unificadas del lado cliente**; lotes; semántica `precio`; criterio `activo`) | Lado cliente + Analista | ⬜ |
 | EDA sobre datos reales (perfil de intermitencia, dedup, ancla, calidad) | ML Specialist | ✅ 2026-07-15 — `motor/eda/eda-2026-07-15.md` |
 | Generador de dataset sintético para el equipo (`datasets/sintetico/`) — parámetros ya calibrados por el EDA | ML Specialist | ⬜ |
 | Definir stack frontend | Frontend Dev | ⬜ (no bloquea R1–R3) |
