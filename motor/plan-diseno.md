@@ -3,7 +3,8 @@
 **Fecha:** 2026-07-15
 **Autor:** ML Specialist
 **Prerequisito de lectura:** [`viabilidad.md`](viabilidad.md). Este plan implementa sus conclusiones.
-**Estado:** diseño — sin código hasta que R1 provea los hechos mensuales (el EDA de M0 puede arrancar antes, contra el snap, en la máquina autorizada).
+**Cronograma y desglose:** [`roadmap-motor.md`](roadmap-motor.md) — este doc define *qué* se construye; el roadmap define *cuándo*, con gates de salida por hito.
+**Estado:** diseño. M0 ✅ (2026-07-15). El código arranca sin esperar a R1: por **ADR-009** el motor lee hechos mensuales vía repositorio, con implementación de archivos locales (sintético / extract propio) hasta el swap a PostgreSQL en M4.
 
 ---
 
@@ -55,6 +56,7 @@
 
 ### M4 — Empaquetado batch e integración
 - Corrida = `EJECUCION_MODELO` (tipo, versión, hiperparámetros JSONB, métricas de backtest) → escribe `PREDICCION_DEMANDA` (con `limite_inferior/superior`) y segmentos.
+- **Swap de la implementación del repositorio de archivos locales a PostgreSQL/SQLModel** (ADR-009). Es la única dependencia dura del motor con el Release 1: M1–M3 corren contra archivos.
 - Contrato con backend: el job nocturno invoca `motor.correr(fecha_corte)`; el motor lee/escribe solo tablas (sin HTTP).
 - Reentrenamiento mensual + monitoreo de degradación (comparar error realizado del mes vs backtest — insumo para detectar drift).
 

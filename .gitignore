@@ -2,6 +2,7 @@
 datasets/*
 !datasets/README.md
 !datasets/sintetico/
+datasets/sintetico/salida/
 *.db
 *.sqlite
 *.dump

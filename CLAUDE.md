@@ -58,6 +58,11 @@ Este repo se comparte entre personas de dentro y fuera de la empresa cliente. Po
 
 - **Idioma:** español en docs, commits y nombres de dominio del código.
 - **Plan antes de código:** para cualquier tarea que toque más de un archivo o cree estructura nueva, escribí primero un plan corto (qué archivos, qué cambios) y esperá confirmación de quien te abrió. Planes de etapa van en `planning/` con **fecha absoluta** (`**Fecha:** AAAA-MM-DD`) en el encabezado; al completarse la etapa, el plan se poda o se archiva actualizando `planning/roadmap.md`.
+- **Control contra el roadmap del módulo** *(vigente hoy para `motor/` y `datasets/` → [`motor/roadmap-motor.md`](motor/roadmap-motor.md); se extiende a cada módulo cuando publique el suyo)*. Todo trabajo de desarrollo en el módulo se contrasta con su roadmap, antes y después:
+  1. **Antes de empezar:** leé el roadmap y ubicá la tarea en una unidad de trabajo concreta (`T0.x`, `M1.x`, …). Si no encaja en ninguna, **no arranques**: o pertenece a un hito posterior, o falta la unidad de trabajo — en ese caso primero se agrega al roadmap (con entregable y gate de salida) y recién después se codea.
+  2. **Respetá el orden y los gates:** no se empieza un hito si el gate de salida del anterior no está cumplido **con evidencia** (ver *Verificación*). Caso concreto en el motor: ningún modelo antes de que el arnés de backtesting y el piso de baselines estén congelados y commiteados.
+  3. **Al terminar:** actualizá el estado de esa unidad en el roadmap del módulo **en la misma unidad de trabajo**. Prohibido dejarlo "para después" — misma disciplina que la documentación del TP.
+  4. **Si el trabajo obliga a cambiar el plan** (reordenar, recortar, agregar o partir una unidad), el cambio se escribe en el roadmap con su motivo antes de seguir. Si además mueve un gate, una frontera entre módulos o un criterio de aceptación, va ADR.
 - **Decisiones técnicas importantes** (regla de negocio descubierta, cambio de contrato, elección de librería estructural) → ADR en `docs/decisiones.md` (formato: contexto / decisión / consecuencias, con estado `Propuesta` hasta que el equipo la ratifique).
 - **Documentación del TP siempre al día:** toda decisión de negocio que se tome o cambie (regla de negocio, alcance, métrica, contrato de datos) DEBE reflejarse en la misma unidad de trabajo en la documentación formal del trabajo práctico — los documentos UTN afectados (Acta, DER, Casos de Uso, Plan de Pruebas) y sus espejos en `docs/`. Está prohibido dejar la documentación divergente del acuerdo vigente "para después". Concretamente: cada ADR nuevo o modificado debe cerrar con una línea **"Docs impactados:"** listando qué documentos hay que actualizar, y la tarea no se considera terminada hasta que esa actualización esté hecha (o registrada como pendiente asignado en `planning/roadmap.md` si el doc formal lo edita otro rol).
 - **Commits:** `<tipo>: <descripción imperativa, español, máx 72 chars>` — tipos: `feat`, `fix`, `docs`, `refactor`, `chore`, `test`. Agregá archivos explícitamente (no `git add -A`). No commitees trabajo a medias que rompa el build.
@@ -68,14 +73,15 @@ Este repo se comparte entre personas de dentro y fuera de la empresa cliente. Po
 
 *(Instrucción para el agente: al cerrar una sesión de trabajo relevante, actualizá SOLO esta sección con el estado y los pendientes accionables, con fecha. Mantenela corta — máx ~15 líneas; el detalle va en `planning/roadmap.md`.)*
 
-**Última actualización:** 2026-07-15 — EDA real hecho + contrato de ingesta v0.9.
+**Última actualización:** 2026-07-25 — ADR-007/008 ratificados; track de desarrollo del motor definido (ADR-009 propuesta).
 
 - Release actual: **R0 — Validación y diseño** (ver `planning/roadmap.md`).
-- Hecho: repo publicado en GitHub; docs base + ADR-001..008; viabilidad y plan del motor; **EDA sobre datos reales** (`motor/eda/eda-2026-07-15.md`: 96 meses desde 2018-07, ~2.200 productos activos, 48/31/10/11% de cuadrantes de intermitencia, 25,4% de productos sin ancla propia, 53,5% de pares cliente×producto con ≤2 compras en 36m); **contrato de ingesta v0.9** (`docs/contrato-ingesta.md`) con mapeo al esquema real.
+- Hecho: repo publicado en GitHub; docs base + ADR-001..008 (**007 y 008 Aceptada**, ratificados 2026-07-25 por autoridad técnica del ML Specialist); viabilidad y plan del motor; **EDA sobre datos reales** (`motor/eda/eda-2026-07-15.md`: 96 meses desde 2018-07, ~2.200 productos activos, 48/31/10/11% de cuadrantes de intermitencia, 25,4% de productos sin ancla propia, 53,5% de pares cliente×producto con ≤2 compras en 36m); **contrato de ingesta v0.9** (`docs/contrato-ingesta.md`); **track del motor** (`motor/roadmap-motor.md`: M1–M4 desglosados, cronograma S0–S15, gates de promoción).
 - Frontera acordada 2026-07-15: el cliente entrega **ventas unificadas** (la unión factura/remito y la dedup son del exportador del lado cliente); DemandSync valida garantías, no re-deduplica. `tipo_comprobante` retirado del contrato y del DER.
+- **ADR-009 (Propuesta, 2026-07-25):** el motor accede a datos vía repositorio abstracto (archivos locales → PostgreSQL en M4). Consecuencia de planificación: **M1–M3 del motor corren en paralelo a R1, no lo esperan**; la única dependencia dura es el swap de M4. A ratificar con el Backend Dev.
 - Pendientes inmediatos:
   - Resolver **P1–P4 del contrato** (P1 = exportador unificado del lado cliente, lotes, `precio` con/sin descuento, criterio `activo`) → congela v1.0.
-  - Ratificar en equipo **ADR-007** y **ADR-008** — impactan DER y plan de pruebas.
+  - Aplicar impacto de ADR-007/008 al DER, CU y Plan de Pruebas UTN + de ADR-009 a `arquitectura.md` (Analista Funcional — ver `planning/roadmap.md`).
   - Correcciones C1–C8 al DER y T1–T6/CP-* al plan de pruebas (Analista Funcional).
-  - Generador de dataset sintético (parámetros ya calibrados por el EDA — §8 del reporte).
-- Sin código de aplicación todavía; no arrancar R1 hasta congelar el contrato de ingesta.
+  - **S0 del motor:** generador sintético (T0.1, ⬜) y capa de datos (T0.3, ⬜) — desbloquean al equipo. Esqueleto del paquete (T0.2) ✅ 2026-07-25.
+- Primer código del repo: `motor/` — esqueleto del paquete `demandsync-motor` (instalable en editable, `pytest`+`ruff` verdes, sin lógica de negocio todavía). **R1 (ingesta) sigue bloqueado por el contrato**; el motor ya no.

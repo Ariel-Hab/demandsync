@@ -78,11 +78,11 @@ monto_real = revenue_cliente,t × (precio_prom_producto_hoy / precio_prom_produc
 ---
 
 ## ADR-007 — Variable objetivo primaria: unidades; revenue derivado
-**Estado:** Propuesta (2026-07-15) — a ratificar por el equipo
+**Estado:** Aceptada (2026-07-25) — ratificada por el ML Specialist por autoridad técnica sobre el diseño del motor; equipo informado, sin objeciones pendientes de registrar.
 
 **Contexto:** predecir montos en pesos argentinos arrastra el riesgo inflacionario completo (riesgo R6); predecir unidades lo elimina del target. El abastecimiento (Q sugerida, cobertura de lotes) necesita **unidades**, no pesos.
 
-**Decisión propuesta:** el motor predice **unidades** por producto (y por segmento) como target primario. El valor monetario se deriva multiplicando por el precio actual/ancla cuando la UI o el negocio lo pidan. Los montos deflactados (ADR-002) se usan como **features** (valor real del cliente, RFM monetario), no como target del MVP.
+**Decisión:** el motor predice **unidades** por producto (y por segmento) como target primario. El valor monetario se deriva multiplicando por el precio actual/ancla cuando la UI o el negocio lo pidan. Los montos deflactados (ADR-002) se usan como **features** (valor real del cliente, RFM monetario), no como target del MVP.
 
 **Consecuencias:** desacopla la calidad del modelo de la inflación; alinea con la contingencia R6 del plan de pruebas; RFM sigue necesitando deflación (CP-INF-04).
 
@@ -91,12 +91,32 @@ monto_real = revenue_cliente,t × (precio_prom_producto_hoy / precio_prom_produc
 ---
 
 ## ADR-008 — Métricas de error: WAPE + MASE + sesgo como métricas internas; MAPE solo comunicacional
-**Estado:** Propuesta (2026-07-15) — a ratificar por el equipo; impacta DER y plan de pruebas
+**Estado:** Aceptada (2026-07-25) — ratificada por el ML Specialist por autoridad técnica sobre la evaluación del motor; impacta DER y plan de pruebas, equipo informado.
 
 **Contexto:** los docs UTN (CU-03, DER `PREDICCION_DEMANDA.mape`, `EJECUCION_MODELO.mape`) fijan MAPE como métrica. MAPE es indefinida con demanda cero (frecuente a nivel producto-segmento-mes), asimétrica (castiga sobre-forecast sin tope y premia forecast bajo) y no ponderada por volumen. La industria opera con WAPE/WMAPE + sesgo; la comparación entre series de distinta escala usa MASE/RMSSE (estándar de la competencia M5).
 
-**Decisión propuesta:** internamente el motor se evalúa con **WAPE** (por nivel de agregación), **MASE** (comparación cross-serie contra naive estacional) y **sesgo** (over/under sistemático). MAPE se conserva como indicador comunicacional en la UI **solo en niveles agregados** donde no hay ceros. El campo `mape` del DER pasa a un genérico `metrica_error` + `tipo_metrica`, o se acompaña de `wape`.
+**Decisión:** internamente el motor se evalúa con **WAPE** (por nivel de agregación), **MASE** (comparación cross-serie contra naive estacional) y **sesgo** (over/under sistemático). MAPE se conserva como indicador comunicacional en la UI **solo en niveles agregados** donde no hay ceros. El campo `mape` del DER pasa a un genérico `metrica_error` + `tipo_metrica`, o se acompaña de `wape`.
 
 **Consecuencias:** cambia levemente DER y casos de prueba; evita reportar errores infinitos/engañosos en productos intermitentes.
 
 **Docs impactados:** DER UTN (`PREDICCION_DEMANDA.mape` y `EJECUCION_MODELO.mape` → `metrica_error` + `tipo_metrica` o columna `wape` adicional), Casos de Uso UTN (CU-03: badge de confianza), Plan de Pruebas (criterios de aceptación del Release 2).
+
+---
+
+## ADR-009 — Frontera de datos del motor: repositorio abstracto; el motor no depende de PostgreSQL para desarrollarse
+**Estado:** Propuesta (2026-07-25) — **a ratificar con el Backend Dev**, es frontera motor↔backend
+
+**Contexto:** el motor consume hechos mensuales que produce el ETL del Release 1, y R1 está bloqueado por el congelamiento del contrato de ingesta (P1–P4). Si el motor espera esa cadena, el track del ML Specialist queda serializado detrás de dos dependencias externas y —peor— el **arnés de backtesting, que es el activo más importante del motor, se escribiría último**. La disciplina baselines-first exige exactamente lo contrario: arnés y piso de baselines primero.
+
+**Decisión propuesta:** el motor accede a datos únicamente a través de una **interfaz de repositorio** (`RepositorioHechos` para lectura, `RepositorioResultados` para escritura), con dos implementaciones intercambiables:
+
+1. **Archivos locales** (parquet) conformes al DER, alimentados por el generador sintético o por un extract propio del snap en la máquina autorizada. Habilita M1–M3 sin base.
+2. **PostgreSQL/SQLModel**, incorporada en M4 cuando R1 exista.
+
+Ambas comparten un **diccionario de columnas único, espejo del DER corregido** (C1 hechos mensuales, C2 entidades de deflación, C3 `CLIENTE_FEATURE`), con un test de conformidad de esquema. El diccionario del motor no es una definición paralela: si el DER cambia un nombre o un tipo, el test rompe y eso es el comportamiento deseado.
+
+Además, el generador sintético emite **dos salidas**: renglones de venta en el esquema del contrato de ingesta (lo que necesita el ETL del backend para probarse) y los hechos mensuales agregados desde su propia verdad de base (lo que consume el motor). Como la segunda se deriva de la primera por una agregación conocida, **el ETL de R1 debe reproducirla** — queda como test de integración de la ingesta.
+
+**Consecuencias:** M1–M3 arrancan sin esperar contrato v1.0 ni ETL; la única dependencia dura de R1 pasa a ser el swap de implementación (M4.2), que es un cambio localizado. Costo: hay que mantener el diccionario sincronizado con el DER y sostener dos implementaciones del repositorio. Riesgo: si el backend renombra columnas sin avisar, la divergencia aparece recién en M4 — se mitiga acordando que el diccionario del motor es espejo del DER y todo rename es cambio de contrato. Si el Backend Dev rechaza esta frontera, el rediseño de la capa de datos hay que hacerlo **antes de M4**, no antes de M1.
+
+**Docs impactados:** `docs/arquitectura.md` (§Flujo de datos y §Entorno de desarrollo: el motor puede correr sin base; el desacoplamiento del principio 1 se materializa con el repositorio), `motor/plan-diseno.md` (M4 incluye explícitamente el swap de implementación), `motor/roadmap-motor.md` (§3 y §10 ya lo asumen), `datasets/README.md` (el generador emite dos salidas, no solo el esquema de ingesta), `planning/roadmap.md` (R2 deja de depender de R1 salvo para la integración batch).
