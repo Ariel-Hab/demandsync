@@ -78,7 +78,19 @@ Objetivo: que en S1 pueda escribir el arnés sin depender de nadie.
 | **M1.7** | Selección **por serie** (mejor baseline por MASE) + **tabla de referencia congelada** sobre sintético | S3 | `motor/backtests/baselines-sintetico-<fecha>.md` |
 | **M1.8** | **Corrida de validación real** en la máquina autorizada: extract propio desde el snap 2018→, mismo arnés, misma tabla | S4 | `motor/backtests/baselines-real-<fecha>.md` — **solo métricas agregadas**. Este es el piso a batir; se congela |
 
+### 5.1 Relevamiento del 2026-07-27 — M1.1/M1.2 vuelven a 🟡 y se agrega M1.0
+
+**Motivo del cambio de plan (CLAUDE.md §6.4).** M1.1 y M1.2 se habían declarado cerradas el 2026-07-27. Un relevamiento posterior —revisión propia + revisión adversarial independiente, todo verificado corriendo contra `datasets/sintetico/`— encontró que **las tres métricas de ADR-008 están mal medidas** y que faltan dos elementos del gate. La declaración de cierre fue incorrecta: se apoyó en una corrida de punta a punta "sin errores" (que sí corre) confundiéndola con "mide bien" (que no). Se revierte el estado y la remediación entra como unidad propia **antes** de M1.5/M1.6, porque un baseline medido con este arnés elegiría el método equivocado.
+
+**Causa raíz común:** el código trata `hecho_venta_mensual_producto` como un panel denso de calendario, y es **dispersa** (un producto-mes sin venta no tiene fila; densidad 72,8%, 0 filas con `unidades == 0`). De ahí salen los defectos 1, 2 y 8.
+
+| # | Unidad de trabajo | Semana | Entregable / gate |
+|---|---|---|---|
+| **M1.0** | **Remediación del arnés y las métricas.** ✅ (a) densificación de calendario → **ADR-010** + `backtesting/panel.py`; ✅ (b) escala de MASE sobre calendario denso, `train_df` ordenado y guarda de escala 0; ✅ (c) WAPE/sesgo por **nivel de agregación** (`columnas_nivel`: producto/categoría/total); ✅ (d) `n` y `cobertura` en toda salida de métrica + el arnés conserva las celdas no predichas; ✅ (e) validación de grano/unicidad y de nulos en columnas de agrupación; ✅ (f) `generar_cortes` sobre calendario; ✅ (h) `tablas_auxiliares` recortadas al corte; ⬜ **(g) identificador de corrida + función de reporte con los cortes 1/3/6/12 — lo único que falta** | S1–S2 | **Tests escritos primero ✅ 2026-07-27**, verificados con `--runxfail` para que fallaran por el defecto y no por un error de la prueba. **Los 9 defectos cerrados ✅ 2026-07-27**: 36 tests verdes, ningún `xfail`, `ruff` limpio, y validación a escala real (345.000 filas comparables; niveles producto/categoría/total 0,804/0,136/0,081; cobertura 1,0 vs 0,391 al omitir series; el fan-out de cliente×producto se rechaza). Ver `backtesting/README.md` §Defectos |
+
 **Gate de salida de M1:** existe una tabla de error de baselines, sobre datos reales, desagregada por horizonte × nivel × cuadrante, congelada y commiteada. A partir de acá **ningún modelo se promociona sin batirla** (disciplina baselines-first, CLAUDE.md §6).
+
+**Precondición agregada al gate de M1 por el relevamiento:** ninguna tabla de referencia se congela (M1.7/M1.8) con M1.0 abierto. Las cifras que produce el arnés hoy no son piso de nada.
 
 **No depende de:** contrato v1.0, R1, ni de trabajo de otros. M1.8 usa extract propio del snap (decisión #4 de `plan-diseno.md`), no el ETL.
 
@@ -131,7 +143,7 @@ Objetivo: que en S1 pueda escribir el arnés sin depender de nadie.
 | Semana | Hito | Foco | Unidades | Estado |
 |---|---|---|---|---|
 | S0 | Desbloqueo | Generador sintético · esqueleto · capa de datos | T0.1–T0.3 | ✅ 2026-07-27 — T0.2 (paquete instalable, `pytest`+`ruff` verdes), T0.3 (`motor/src/motor/datos/`, 8 tests verdes) y T0.1 (`datasets/sintetico/`: generador top-down con rechazo/resorteo por producto; gate de cuadrantes cumplido con desvíos ≤1,25 pts sobre ±3 de tolerancia — `datasets/sintetico/manifiesto.json`) |
-| S1–S2 | M1 | Arnés · métricas · test anti-leakage · clasificador de cuadrantes | M1.1–M1.4 | ⬜ |
+| S1–S2 | M1 | Arnés · métricas · test anti-leakage · clasificador de cuadrantes | M1.0–M1.4 | 🟡 2026-07-27 — esqueleto de M1.1/M1.2 escrito y **relevado** (§5.1): 9 defectos de medición confirmados, cierre revertido. **Los 9 defectos ya están arreglados** (`ADR-010` + `panel.py`, niveles de agregación, cobertura, guardas de grano y nulos, hook de auxiliares): 36 tests verdes, ningún `xfail`. **Falta de M1.0 solo el ítem (g)** — identificador de corrida y función de reporte. Después: M1.3, M1.4 |
 | S3 | M1 | Baselines + intermitentes · tabla sintética | M1.5–M1.7 | ⬜ |
 | S4 | M1 | **Piso real congelado** (máquina autorizada) | M1.8 | ⬜ |
 | S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | ⬜ |

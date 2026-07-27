@@ -29,7 +29,10 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Layout `src/`: el paquete importable es `motor` (`motor/src/motor/`). `datos/` (T0.3) y `backtesting/` (M1.1) se agregan como subpaquetes en sus propias unidades de trabajo — no existen todavía.
+Layout `src/`: el paquete importable es `motor` (`motor/src/motor/`). `datos/` (T0.3) y
+`backtesting/` (M1.1–M1.2, ver su propio [README](src/motor/backtesting/README.md)) ya
+existen. El resto de los subpaquetes (`modelado/`, etc.) se agregan en sus propias
+unidades de trabajo del roadmap.
 
 ## Documentos
 

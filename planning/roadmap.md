@@ -25,6 +25,7 @@ Fase pre-código. Objetivo: que cada módulo tenga contrato, plan y criterio de 
 | Generador de dataset sintético para el equipo (`datasets/sintetico/`) — dos salidas: renglones del contrato + hechos mensuales | ML Specialist | ⬜ planificado en S0 del track del motor |
 | **Ratificar ADR-009** (frontera de datos del motor: repositorio abstracto, motor desacoplado de R1) | Backend Dev | ⬜ no bloquea M1–M3; si se rechaza, rediseño de la capa de datos antes de M4 |
 | Aplicar impacto de ADR-009 a `docs/arquitectura.md` (§Flujo de datos, §Entorno de desarrollo) **una vez ratificado** | Analista Funcional (con Backend) | ⬜ |
+| Aplicar impacto de **ADR-010** (demanda cero explícita) al Plan de Pruebas: el supuesto de **demanda censurada** pasa de nota a criterio explícito — sin histórico de stock, un mes en cero puede ser "nadie lo pidió" o "no había stock" y el motor los trata igual (ya documentado en `motor/viabilidad.md` §3.5, ahora operativo en cada fila del panel) | Analista Funcional | ⬜ ADR ya Aceptada por el ML Specialist (es regla de medición interna del motor, no cambia hechos persistidos ni el contrato de ingesta) |
 | Definir stack frontend | Frontend Dev | ⬜ (no bloquea R1–R3) |
 
 **Criterio de salida de R0:** contrato JSON congelado (v1.0) + ADRs 007/008 resueltos.

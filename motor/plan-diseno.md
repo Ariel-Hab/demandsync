@@ -64,7 +64,8 @@
 
 ## Protocolo de backtesting (innegociable)
 
-- **Rolling origin:** cortes mensuales sobre los últimos 18 meses (ej. corte en t → entrenar con ≤ t → predecir t+1..t+12 → avanzar). Sin shuffle, sin k-fold clásico.
+- **Paso 0 — densificación del calendario (ADR-010):** antes de medir, la serie se completa con **ceros explícitos** en los meses sin venta, desde la primera venta de cada serie hasta el último mes del período. Las tablas de hechos son dispersas (no persisten no-eventos) y medir directamente sobre ellas condiciona el error a que hubo venta: sobre-pronosticar donde la demanda fue cero queda invisible, que es el error dominante con 42% de series intermitentes. Se rellenan solo las columnas de cantidad; **`precio_prom` queda nulo, nunca cero** (un cero contaminaría el índice implícito de la deflación). Verificado sobre el sintético: sin este paso se pierde el 30,6% de los pares producto-mes y el WAPE a h=1 se reporta 0,53 cuando es 0,80.
+- **Rolling origin:** cortes mensuales sobre los últimos 18 meses (ej. corte en t → entrenar con ≤ t → predecir t+1..t+12 → avanzar). Sin shuffle, sin k-fold clásico. Los cortes salen del **calendario**, no de los meses observados (si no, por serie individual los "cortes mensuales" quedan separados por saltos de varios meses).
 - **Regla anti-leakage de deflación:** para el corte t, `precio_prom_hoy` y todos los índices se calculan **solo con datos ≤ t**. El ancla "de hoy" del backtest es el hoy de ese corte, no el actual. (Error sutil y letal: deflactar todo el histórico con el ancla presente hace que el modelo vea información del futuro vía precios.)
 - **Métricas (ADR-008):** WAPE por nivel de agregación, MASE vs `SeasonalNaive` por serie, sesgo (%over/under). MAPE solo se reporta en niveles agregados para comunicación.
 - **Cortes de reporte:** por horizonte (1/3/6/12), por cuadrante de intermitencia, por categoría. Un número global esconde todo.

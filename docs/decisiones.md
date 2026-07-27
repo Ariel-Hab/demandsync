@@ -120,3 +120,31 @@ Además, el generador sintético emite **dos salidas**: renglones de venta en el
 **Consecuencias:** M1–M3 arrancan sin esperar contrato v1.0 ni ETL; la única dependencia dura de R1 pasa a ser el swap de implementación (M4.2), que es un cambio localizado. Costo: hay que mantener el diccionario sincronizado con el DER y sostener dos implementaciones del repositorio. Riesgo: si el backend renombra columnas sin avisar, la divergencia aparece recién en M4 — se mitiga acordando que el diccionario del motor es espejo del DER y todo rename es cambio de contrato. Si el Backend Dev rechaza esta frontera, el rediseño de la capa de datos hay que hacerlo **antes de M4**, no antes de M1.
 
 **Docs impactados:** `docs/arquitectura.md` (§Flujo de datos y §Entorno de desarrollo: el motor puede correr sin base; el desacoplamiento del principio 1 se materializa con el repositorio), `motor/plan-diseno.md` (M4 incluye explícitamente el swap de implementación), `motor/roadmap-motor.md` (§3 y §10 ya lo asumen), `datasets/README.md` (el generador emite dos salidas, no solo el esquema de ingesta), `planning/roadmap.md` (R2 deja de depender de R1 salvo para la integración batch).
+
+---
+
+## ADR-010 — Demanda cero explícita: el motor mide sobre un calendario denso, desde la primera venta de cada producto
+**Estado:** Aceptada (2026-07-27) — ratificada por el ML Specialist por autoridad técnica sobre la medición del motor (mismo criterio que ADR-007/008). No altera hechos persistidos ni el contrato de ingesta: es una regla de preparación **read-time**, como la deflación de ADR-002.
+
+**Contexto:** `HECHO_VENTA_MENSUAL_PRODUCTO` es **disperso**: un producto-mes sin venta no tiene fila (verificado sobre el dataset sintético: 160.664 filas de 220.800 celdas posibles, densidad 72,8%, cero filas con `unidades = 0`). Eso es correcto para una tabla de hechos —no se persisten no-eventos— pero el consumo analítico necesita la serie completa: un pronóstico se evalúa mes a mes, exista o no la fila.
+
+El relevamiento del 2026-07-27 (`motor/roadmap-motor.md` §5.1) encontró que el arnés de backtesting trataba la tabla como si fuera un panel denso, con tres consecuencias medidas: (1) el 30,6% de los pares producto-mes nunca se medía, y el WAPE real a h=1 era 0,80 contra 0,53 reportado; (2) la escala de MASE, que `utilsforecast` calcula con un desplazamiento de 12 **filas**, dejaba de equivaler a 12 meses — el 68,8% de las series con el denominador mal, hasta 9,6x; (3) los "cortes mensuales" del backtest no eran consecutivos al operar por serie. Sin ceros explícitos, **sobre-pronosticar donde la demanda fue cero es invisible**, que es justamente el error dominante en un portafolio con 42% de series intermitentes.
+
+**Decisión:** el motor densifica el calendario antes de medir y antes de modelar. La regla:
+
+1. **Grano:** un registro por `(serie, mes)` para todos los meses del calendario, sin huecos.
+2. **Desde:** el **primer mes con venta de cada serie**, no el inicio del dataset. Un producto que entró al catálogo en 2023 no tuvo demanda cero en 2019: no existía, y rellenarlo inventaría años de ceros falsos que sesgarían la intermitencia medida.
+3. **Hasta:** el **último mes del período de datos**, aunque la serie haya dejado de vender. Los ceros de cola se miden: si el modelo predice 10 unidades de un producto discontinuado, ese error tiene que verse. Cortar en la última venta lo esconde — y detectar obsolescencia es exactamente para lo que existe TSB (M1.6).
+4. **Qué se rellena con cero:** solo las columnas de **cantidad** (`unidades`, `revenue`). **`precio_prom` queda nulo, nunca cero**: en un mes sin venta no hay precio observado, y un cero contaminaría el índice implícito de la deflación (ADR-002).
+5. La densificación es **read-time y no se persiste** (coherente con ADR-001: los hechos mensuales siguen siendo inmutables, nominales y dispersos).
+
+**Consecuencias:**
+- Las métricas de ADR-008 pasan a medir sobre la población completa. Los números previos al 2026-07-27 no son comparables con los posteriores: **el piso de baselines se congela recién con esta regla vigente** (gate de M1).
+- Habilita la rama intermitente de M1.6 (`CrostonSBA`, `TSB`): esos métodos aciertan prediciendo bajo en los meses de cero, y sin ceros medidos perderían sistemáticamente contra un naive que sobre-pronostica. Con la tabla dispersa se habría elegido el método equivocado para ~42% del catálogo.
+- Aplica igual a `P(compra)` de M3.2 (cliente×producto): ahí los ceros **son** la señal que el modelo predice. Advertencia de escala: densificar 319k pares × 96 meses son ~30M de filas; se densifica por ventana de evaluación, no el histórico completo.
+- Hace **operativo** el supuesto de demanda censurada ya documentado en `motor/viabilidad.md` §3.5: al no haber histórico de stock, un cero puede ser "nadie lo pidió" o "no había stock", y el motor los trata igual. La densificación no crea esa limitación —ya existía— pero la vuelve explícita en cada fila. Si algún día el cliente expone quiebres, la regla se revisa con un ADR nuevo.
+- Costo: el panel denso es ~1,4x la tabla dispersa a nivel producto. Irrelevante a esta escala.
+
+**Alternativas descartadas:** (a) densificar desde el inicio del dataset — inventa ceros de productos que no existían y corrompe la clasificación de intermitencia; (b) densificar solo entre primera y última venta — esconde la obsolescencia, que es un caso de negocio real; (c) dejar que cada modelo densifique por su cuenta — reintroduce el defecto en cada componente nuevo y hace incomparables las métricas entre modelos.
+
+**Docs impactados:** `motor/plan-diseno.md` (§Protocolo de backtesting: agregar la densificación como paso previo obligatorio), `motor/roadmap-motor.md` (§5.1 M1.0 ya la asume como entregable (a)), `motor/src/motor/backtesting/README.md` (regla de calendario), Plan de Pruebas UTN (el supuesto de demanda censurada pasa de nota a criterio explícito; coordinar con el Analista Funcional — registrado en `planning/roadmap.md`).
