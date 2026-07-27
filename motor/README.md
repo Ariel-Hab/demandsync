@@ -29,10 +29,21 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Layout `src/`: el paquete importable es `motor` (`motor/src/motor/`). `datos/` (T0.3) y
-`backtesting/` (M1.1–M1.2, ver su propio [README](src/motor/backtesting/README.md)) ya
-existen. El resto de los subpaquetes (`modelado/`, etc.) se agregan en sus propias
-unidades de trabajo del roadmap.
+Layout `src/`: el paquete importable es `motor` (`motor/src/motor/`). Ya existen `datos/`
+(T0.3), `backtesting/` (M1.0–M1.3, ver su propio
+[README](src/motor/backtesting/README.md)) y `clasificacion.py` (M1.4: cuadrantes
+Syntetos-Boylan por serie). El resto de los subpaquetes (`modelado/`, etc.) se agregan en
+sus propias unidades de trabajo del roadmap.
+
+```bash
+pytest                     # toda la suite
+pytest -m innegociable     # solo la red anti-leakage (M1.3)
+```
+
+**`datasets/` importa del motor, nunca al revés.** El motor es código de producción y no
+puede depender de una herramienta de desarrollo; el generador sintético usa
+`motor.clasificacion` para que su gate de calibración se mida con el mismo criterio que
+después usa el motor.
 
 ## Documentos
 

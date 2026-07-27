@@ -23,9 +23,10 @@ PROPORCION_ARQUETIPOS = {
     "lumpy": 0.111,
 }
 
-# Umbrales Syntetos-Boylan (mismo criterio que motor/eda/eda-2026-07-15.md §3)
-ADI_UMBRAL = 1.32
-CV2_UMBRAL = 0.49
+# Los umbrales Syntetos-Boylan (ADI 1,32 / CV² 0,49) NO se definen acá: viven en
+# `motor.clasificacion` y se importan desde `clasificacion.py`. Duplicarlos permitiría que
+# el generador calibrara contra un criterio y el motor midiera contra otro, y el gate de
+# calibración dejaría de significar algo.
 
 TOLERANCIA_CALIBRACION_PUNTOS = 3.0  # gate de S0: ±3 puntos porcentuales
 MAX_INTENTOS_CALIBRACION_PRODUCTO = 40  # rechazo/resorteo de parámetros por producto

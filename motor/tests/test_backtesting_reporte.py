@@ -151,12 +151,31 @@ def test_sin_categoria_el_reporte_no_inventa_el_nivel(datos):
 
 
 def test_el_markdown_avisa_que_falta_el_corte_por_cuadrante(datos):
-    """El corte por cuadrante lo exige el gate de M1.2 y llega con M1.4. Mientras no
-    esté, el reporte tiene que decirlo: un faltante silencioso se lee como cumplido."""
+    """Sin la columna `cuadrante` el reporte tiene que decirlo: un faltante silencioso se
+    lee como cumplido. La columna la produce `motor.clasificacion` (M1.4), pero no todo
+    reporte la trae — por ejemplo uno armado a mano para inspeccionar algo puntual."""
     md = a_markdown(construir_reporte(_correr(datos), columna_pred="pred"), titulo="Prueba")
 
     assert "cuadrante" in md
     assert "M1.4" in md
+
+
+def test_con_la_columna_cuadrante_el_reporte_la_desagrega(datos):
+    """El caso que cierra el gate de M1.2. Es la desagregación que más importa: sobre el
+    sintético, el WAPE va de 0,51 en las series suaves a 1,63 en las lumpy, y un número
+    global de 0,80 esconde esa diferencia de 3x."""
+    from motor.clasificacion import clasificar_series, etiquetar
+
+    reporte = etiquetar(_correr(datos), clasificar_series(datos))
+
+    tablas = construir_reporte(reporte, columna_pred="pred")
+    md = a_markdown(tablas, titulo="Prueba")
+
+    assert "por_cuadrante" in tablas
+    assert set(tablas["por_cuadrante"].columns) == {
+        "cuadrante", "horizonte", "wape", "sesgo", "n", "cobertura"
+    }
+    assert "M1.4" not in md, "no debería avisar de un faltante que ya está cubierto"
 
 
 def test_el_markdown_avisa_si_se_perdio_la_trazabilidad(datos):

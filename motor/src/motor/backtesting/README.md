@@ -4,16 +4,15 @@ Ver diseño completo en [`../../../plan-diseno.md`](../../../plan-diseno.md) §P
 backtesting y [`../../../roadmap-motor.md`](../../../roadmap-motor.md) §5 (M1). Este README
 es la referencia rápida de **cómo usar el código**, no repite el diseño.
 
-> ## Estado: M1.0 cerrado. Falta solo el corte por cuadrante, que llega con M1.4
+> ## Estado: M1.0, M1.1, M1.2 y M1.3 cerrados
 >
 > El relevamiento del 2026-07-27 (`roadmap-motor.md` §5.1) encontró 9 defectos de
-> medición. **Los 9 están arreglados**, cada uno con su test de regresión, y el ítem
-> (g) —identificación de corridas y reporte tabular— está entregado. 51 tests verdes,
-> ningún `xfail`.
+> medición; **los 9 están arreglados**, cada uno con su test de regresión. Están
+> entregados también la identificación de corridas, el reporte tabular con todos sus
+> cortes —incluido el de cuadrante, vía `motor.clasificacion`— y la red anti-leakage.
+> 82 tests verdes, ningún `xfail`.
 >
-> **Lo único que falta del gate de M1.2** es el desagregado **por cuadrante de
-> intermitencia**, que depende del clasificador ADI/CV² de **M1.4**. `a_markdown()`
-> escribe esa ausencia en el reporte para que no se lea como cumplida.
+> Lo que sigue es **M1.5/M1.6**: los baselines de verdad. El arnés ya puede medirlos.
 
 ## Piezas
 
@@ -167,12 +166,27 @@ recorre el 25,4% de los productos activos (EDA §4), no es un caso borde.
 Verificada contra el dataset real: el ancla correcta pasa sobre 160.664 filas en 0,11s y
 la contaminada se detecta en el primer corte.
 
-## Qué NO hace todavía
+## El corte por cuadrante de intermitencia
 
-- **No desagrega por cuadrante de intermitencia.** `construir_reporte()` incluye la
-  tabla en cuanto el reporte traiga una columna `cuadrante`, y mientras no la traiga
-  `a_markdown()` deja la advertencia escrita. Lo entrega **M1.4**, y es lo único que
-  le falta al gate de M1.2.
+`construir_reporte()` agrega la tabla en cuanto el reporte traiga una columna
+`cuadrante`, y si no la trae `a_markdown()` deja escrita la ausencia. La columna la pone
+`motor.clasificacion` (M1.4):
+
+```python
+from motor.clasificacion import clasificar_series, etiquetar
+
+reporte = etiquetar(reporte, clasificar_series(hecho_producto))
+```
+
+Es la desagregación que más información aporta. Sobre el sintético, con el mismo
+predictor, el WAPE a h=1 va de **0,51 en las series suaves a 1,63 en las lumpy** — un
+número global de 0,80 esconde una diferencia de 3x. Y es lo que va a decidir el
+enrutamiento de método en M1.5/M1.6.
+
+**Cuidado con el corte cuando se use para enrutar** (no para reportar): ahí
+`clasificar_series` tiene que recibir `hasta=corte`, si no el modelo elige su método con
+información del futuro. La red de `leakage.py` lo verifica, y hay un test que la corre
+sobre el clasificador.
 - No enruta por cuadrante de intermitencia (Syntetos-Boylan) — eso es **M1.4**.
   Ese corte de reporte lo exige el gate de **M1.2**; moverlo a M1.4 es un cambio
   de alcance que quedó registrado en `roadmap-motor.md` §5.1.
