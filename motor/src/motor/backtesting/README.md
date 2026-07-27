@@ -4,16 +4,16 @@ Ver diseño completo en [`../../../plan-diseno.md`](../../../plan-diseno.md) §P
 backtesting y [`../../../roadmap-motor.md`](../../../roadmap-motor.md) §5 (M1). Este README
 es la referencia rápida de **cómo usar el código**, no repite el diseño.
 
-> ## Estado: los 9 defectos de medición están cerrados; falta el empaquetado del reporte
+> ## Estado: M1.0 cerrado. Falta solo el corte por cuadrante, que llega con M1.4
 >
-> El relevamiento del 2026-07-27 (`roadmap-motor.md` §5.1) encontró 9 defectos. **Los
-> 9 están arreglados** (2026-07-27), cada uno con su test de regresión en
-> `tests/test_backtesting_defectos_m1_0.py` — 36 tests verdes, ningún `xfail`.
+> El relevamiento del 2026-07-27 (`roadmap-motor.md` §5.1) encontró 9 defectos de
+> medición. **Los 9 están arreglados**, cada uno con su test de regresión, y el ítem
+> (g) —identificación de corridas y reporte tabular— está entregado. 51 tests verdes,
+> ningún `xfail`.
 >
-> **Falta todavía, de M1.0:** identificador de corrida y la función de reporte con los
-> cortes 1/3/6/12 (ítem (g) del roadmap). Hasta que existan, las tablas se arman a
-> mano y no hay trazabilidad de qué configuración produjo qué número — así que
-> **todavía no se congela el piso de baselines** (M1.7/M1.8).
+> **Lo único que falta del gate de M1.2** es el desagregado **por cuadrante de
+> intermitencia**, que depende del clasificador ADI/CV² de **M1.4**. `a_markdown()`
+> escribe esa ausencia en el reporte para que no se lea como cumplida.
 
 ## Piezas
 
@@ -23,6 +23,8 @@ es la referencia rápida de **cómo usar el código**, no repite el diseño.
 | `cortes.py` | `generar_cortes(fechas, n_cortes)` — los puntos de corte rolling-origin, sobre el **calendario**. Sin shuffle, sin k-fold. |
 | `arnes.py` | `ejecutar_backtest(datos, predecir, ...)` — el punto de entrada único. Densifica, orquesta cortes y llama a un predictor pluggable. |
 | `metricas.py` | `wape()`, `sesgo()` (implementación propia) y `mase()` (wrapper de `utilsforecast`; densifica su `train_df`). |
+| `corrida.py` | `Corrida` + `identificar_corrida()` — trazabilidad: `id` = hash de configuración + huella de los datos. |
+| `reporte.py` | `construir_reporte()` (juego de tablas por horizonte × nivel × categoría) y `a_markdown()` (lo que se congela en `motor/backtests/`). |
 
 ## El contrato del predictor
 
@@ -73,6 +75,30 @@ sesgo(reporte, ["horizonte"], columna_pred="mi_modelo", columnas_nivel=[])
 mase(reporte, modelos=["mi_modelo"], train_df=hecho_producto)
 ```
 
+Para la tabla completa —la que se congela en `motor/backtests/`— no se llaman las
+métricas una por una:
+
+```python
+from motor.backtesting.reporte import construir_reporte, a_markdown
+
+tablas = construir_reporte(reporte, columna_pred="mi_modelo", train_df=hecho_producto)
+md = a_markdown(tablas, titulo="Piso de baselines — sintético")
+```
+
+**Trazabilidad:** el reporte trae la columna `id_corrida` y los metadatos completos en
+`reporte.attrs["corrida"]`. Ojo con `.attrs`: pandas lo descarta en varias operaciones
+—un `merge` con el catálogo alcanza, verificado— mientras que la columna sobrevive. Si
+vas a cruzar el reporte antes de armar las tablas, guardate la `Corrida` y reponela:
+
+```python
+corrida = reporte.attrs["corrida"]
+reporte = reporte.merge(catalogo, on="id_producto", how="left")
+reporte.attrs["corrida"] = corrida    # si no, el reporte sale sin identificar
+```
+
+`a_markdown()` avisa arriba del archivo cuando el reporte perdió la trazabilidad, para
+que no se congele una tabla anónima por accidente.
+
 Toda métrica devuelve además `n` (filas agregadas) y `cobertura` (fracción con
 predicción). **Mirá siempre la cobertura antes de comparar dos tablas:** un
 predictor que omite las series difíciles saca mejor WAPE, y sin cobertura las dos
@@ -104,9 +130,10 @@ simplificar el wrapper.
 
 ## Qué NO hace todavía
 
-- **No identifica las corridas** ni ensambla un reporte tabular con los cortes
-  1/3/6/12 — ítem (g) de M1.0, sin entregar. `motor/backtests/` (destino declarado
-  de las tablas congeladas) todavía no existe. **Es lo único que falta de M1.0.**
+- **No desagrega por cuadrante de intermitencia.** `construir_reporte()` incluye la
+  tabla en cuanto el reporte traiga una columna `cuadrante`, y mientras no la traiga
+  `a_markdown()` deja la advertencia escrita. Lo entrega **M1.4**, y es lo único que
+  le falta al gate de M1.2.
 - No enruta por cuadrante de intermitencia (Syntetos-Boylan) — eso es **M1.4**.
   Ese corte de reporte lo exige el gate de **M1.2**; moverlo a M1.4 es un cambio
   de alcance que quedó registrado en `roadmap-motor.md` §5.1.

@@ -10,6 +10,7 @@ from collections.abc import Callable
 
 import pandas as pd
 
+from .corrida import identificar_corrida
 from .cortes import generar_cortes
 from .panel import densificar
 
@@ -67,6 +68,7 @@ def ejecutar_backtest(
     densificar_calendario: bool = True,
     tablas_auxiliares: dict[str, pd.DataFrame] | None = None,
     columna_fecha_auxiliares: str = "fecha_calculo",
+    fecha_ejecucion: str | None = None,
 ) -> pd.DataFrame:
     """Corre el arnés rolling-origin completo y devuelve un reporte largo.
 
@@ -99,6 +101,13 @@ def ejecutar_backtest(
     nula, no se borran: si desaparecieran, omitir las series difíciles mejoraría el
     score sin dejar rastro (medido: el WAPE bajaba de 0,528 a 0,276). La columna
     `cobertura` de las métricas es la que lo delata.
+
+    **Trazabilidad (M1.0 (g)):** el reporte lleva una columna `id_corrida` y los
+    metadatos completos en `reporte.attrs["corrida"]` (un `Corrida`). La columna es el
+    vínculo durable —sobrevive merges y escrituras a parquet—, mientras que `.attrs`
+    de pandas se pierde en varias operaciones; para conservar los metadatos, tomalos
+    antes de transformar el reporte. `fecha_ejecucion` se puede fijar para tests
+    determinísticos: no entra en el `id`, que es hash de configuración + datos.
     """
     columnas_id = list(columnas_id) if columnas_id else ["id_producto"]
     _validar_grano(
@@ -161,4 +170,19 @@ def ejecutar_backtest(
 
     if not reportes:
         raise ValueError("Ningún corte produjo filas comparables entre predicción y real")
-    return pd.concat(reportes, ignore_index=True)
+
+    corrida = identificar_corrida(
+        datos=datos,
+        cortes=cortes,
+        n_cortes=n_cortes,
+        horizonte_max=horizonte_max,
+        columnas_id=columnas_id,
+        columna_fecha=columna_fecha,
+        columna_objetivo=columna_objetivo,
+        densificado=densificar_calendario,
+        fecha_ejecucion=fecha_ejecucion,
+    )
+    reporte = pd.concat(reportes, ignore_index=True)
+    reporte["id_corrida"] = corrida.id
+    reporte.attrs["corrida"] = corrida
+    return reporte
