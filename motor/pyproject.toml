@@ -38,3 +38,8 @@ select = ["E", "F", "I", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    # Redes de seguridad que no se desactivan ni se marcan como skip. Correlas solas
+    # con `pytest -m innegociable` antes de tocar deflación, features o el arnés.
+    "innegociable: red contra un error que se manifiesta como una buena noticia (M1.3)",
+]

@@ -25,6 +25,7 @@ es la referencia rápida de **cómo usar el código**, no repite el diseño.
 | `metricas.py` | `wape()`, `sesgo()` (implementación propia) y `mase()` (wrapper de `utilsforecast`; densifica su `train_df`). |
 | `corrida.py` | `Corrida` + `identificar_corrida()` — trazabilidad: `id` = hash de configuración + huella de los datos. |
 | `reporte.py` | `construir_reporte()` (juego de tablas por horizonte × nivel × categoría) y `a_markdown()` (lo que se congela en `motor/backtests/`). |
+| `leakage.py` | `verificar_sin_leakage()` — **red innegociable** (M1.3) contra el leakage temporal de la deflación. Verifica una propiedad, no una implementación. |
 
 ## El contrato del predictor
 
@@ -36,13 +37,11 @@ def predictor(historia: pd.DataFrame, corte: pd.Timestamp, horizonte_max: int) -
     ...  # devuelve columnas_id + columna_fecha + al menos una columna de predicción
 ```
 
-`historia` es **todo** lo que hay en `datos` con fecha ≤ `corte` — nunca más. Ese
-es el mecanismo anti-leakage de esta unidad, y **cubre solo `datos`**: el arnés no
-tiene hoy ningún hook para recortar temporalmente tablas auxiliares, y
-`cliente_feature` es una foto única del último mes (verificado: todas las filas
-con `fecha_calculo = 2026-06`). Un predictor de M2.2 que la use estaría viendo el
-futuro y el arnés no lo impediría. No confundir con **M1.3**, que es el test
-específico sobre el ancla de deflación de M2.1.
+`historia` es **todo** lo que hay en `datos` con fecha ≤ `corte` — nunca más. Ese es el
+mecanismo anti-leakage del arnés; las tablas auxiliares se recortan con
+`tablas_auxiliares` (ver abajo). Es complementario, no equivalente, a la red de
+`leakage.py`: el arnés controla **qué se le entrega** al predictor, y la red controla
+**qué usa** un cálculo cuando se le entrega todo.
 
 El predictor puede predecir de más (ej. 12 meses siempre) sin saber cuántos meses
 de real van a existir en verdad: `ejecutar_backtest` trunca contra el fin de la
@@ -127,6 +126,46 @@ renombrando a las convenciones nativas (`unique_id`/`ds`/`y`/`cutoff`) antes de
 llamar y deshaciendo el rename al volver — no expone el bug hacia afuera. Si se
 actualiza `utilsforecast`, vale la pena revisar si esto se corrigió antes de
 simplificar el wrapper.
+
+## La red anti-leakage (M1.3) — innegociable
+
+```bash
+pytest -m innegociable     # corré esto antes de tocar deflación, features o el arnés
+```
+
+El error que cubre es el más sutil del motor (`viabilidad.md` §5): si para el corte t el
+ancla de deflación se calcula con datos posteriores a t, el modelo ve el futuro por vía
+de los precios. **Su síntoma es un error de backtest bajo**, o sea que se manifiesta
+como una buena noticia — de ahí que haga falta una red automática y no buena voluntad.
+
+Se escribió **antes** que la deflación de M2.1, así que no verifica una implementación:
+verifica una **propiedad**, y sirve para cualquier candidata futura.
+
+> Si dos datasets coinciden en todo lo anterior o igual al corte, tienen que producir el
+> mismo resultado en ese corte.
+
+De ahí las dos variantes que prueba, y por qué prueba las dos antes de cortar: **truncar**
+el futuro detecta que se usó la *existencia* de filas futuras (un conteo, un rango, un
+reindex), y **perturbar** sus valores detecta que se leyeron. Cuál de las dos falla es el
+diagnóstico, así que el mensaje lo dice.
+
+```python
+verificar_sin_leakage(
+    lambda datos, corte: TransformadorDeflacion().ajustar(datos, corte).ancla_,
+    datos=hecho_producto,
+    cortes=generar_cortes(hecho_producto["anio_mes"]),
+)
+```
+
+`tests/test_leakage_deflacion.py` le pasa tres implementaciones **deliberadamente
+contaminadas** y verifica que las detecte — un verificador que nunca se probó contra un
+caso malo no es una red, es una decoración. La más relevante de las tres es el *fallback
+con promedio global*: filtra bien la ventana por producto, pero resuelve los productos
+sin ancla propia con un promedio de toda la historia. Importa porque ese camino lo
+recorre el 25,4% de los productos activos (EDA §4), no es un caso borde.
+
+Verificada contra el dataset real: el ancla correcta pasa sobre 160.664 filas en 0,11s y
+la contaminada se detecta en el primer corte.
 
 ## Qué NO hace todavía
 
