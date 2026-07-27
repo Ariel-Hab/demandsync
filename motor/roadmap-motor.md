@@ -24,8 +24,8 @@
 | **M0 — EDA y auditoría de datos** | ✅ 2026-07-15 — [`eda/eda-2026-07-15.md`](eda/eda-2026-07-15.md) |
 | Decisiones de diseño del motor (8/8) | ✅ `plan-diseno.md` §Decisiones |
 | ADR-007 (unidades) / ADR-008 (WAPE·MASE·sesgo) | ✅ Aceptadas 2026-07-25 |
-| Generador de dataset sintético | ⬜ único pendiente propio de R0 |
-| Código del motor | ⬜ no existe todavía |
+| Generador de dataset sintético | ✅ 2026-07-27 — ver §9 |
+| Código del motor | ✅ 2026-07-27 — esqueleto + capa de datos (T0.2/T0.3), ver §9 |
 
 **Consecuencia:** el track arranca en S0 con el desbloqueo (generador + esqueleto + capa de datos) y entra en M1 en S1. El EDA ya calibró los parámetros del generador (EDA §8), así que S0 no requiere volver a la máquina autorizada.
 
@@ -130,7 +130,7 @@ Objetivo: que en S1 pueda escribir el arnés sin depender de nadie.
 
 | Semana | Hito | Foco | Unidades | Estado |
 |---|---|---|---|---|
-| S0 | Desbloqueo | Generador sintético · esqueleto · capa de datos | T0.1–T0.3 | 🟡 T0.2 ✅ 2026-07-25 (paquete `demandsync-motor` instalable en editable, `pytest`+`ruff` verdes); T0.1/T0.3 pendientes |
+| S0 | Desbloqueo | Generador sintético · esqueleto · capa de datos | T0.1–T0.3 | ✅ 2026-07-27 — T0.2 (paquete instalable, `pytest`+`ruff` verdes), T0.3 (`motor/src/motor/datos/`, 8 tests verdes) y T0.1 (`datasets/sintetico/`: generador top-down con rechazo/resorteo por producto; gate de cuadrantes cumplido con desvíos ≤1,25 pts sobre ±3 de tolerancia — `datasets/sintetico/manifiesto.json`) |
 | S1–S2 | M1 | Arnés · métricas · test anti-leakage · clasificador de cuadrantes | M1.1–M1.4 | ⬜ |
 | S3 | M1 | Baselines + intermitentes · tabla sintética | M1.5–M1.7 | ⬜ |
 | S4 | M1 | **Piso real congelado** (máquina autorizada) | M1.8 | ⬜ |
@@ -155,6 +155,7 @@ Objetivo: que en S1 pueda escribir el arnés sin depender de nadie.
 | Impacto de ADR-007/008 en DER, CU y Plan de Pruebas | Analista Funcional | La coherencia documental del TP | El código del motor |
 | Contrato de invocación del job batch | Backend Dev + yo | **M4.3** | M1–M3 |
 | Stack frontend | Frontend Dev | Nada del motor | Todo |
+| Imagen Docker del motor (dependencias pesadas: `lightgbm`, `statsforecast`, `mlforecast`...) | Backend Dev (`infra/`) | Nada hoy — no es unidad de trabajo de S0–M3; `pyproject.toml` + venv alcanzan para desarrollo local | Todo hasta que exista una necesidad real: **M4.3** (job batch) o que alguien del equipo necesite correr el motor sin instalar las deps a mano. Se coordina con Backend Dev en ese momento, no se arma unilateralmente antes |
 
 **Lo que yo debo entregarle al equipo, y cuándo:** el dataset sintético en **S0** (lo necesitan backend para el ETL y frontend para mockear); el piso de baselines en **S4** (lo necesita el Analista para fijar criterios de aceptación de R2 en el plan de pruebas); el contrato de invocación en **S14**.
 

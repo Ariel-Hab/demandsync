@@ -1,0 +1,53 @@
+{
+  "semilla": 42,
+  "fecha_generacion": "2026-07-27",
+  "n_productos": 2300,
+  "n_clientes": 1600,
+  "n_meses": 96,
+  "cuadrantes_intermitencia": {
+    "objetivo_pct": {
+      "suave": 47.8,
+      "intermitente": 30.9,
+      "erratica": 10.1,
+      "lumpy": 11.1
+    },
+    "logrado_pct": {
+      "suave": 48.8,
+      "intermitente": 29.7,
+      "lumpy": 11.6,
+      "erratica": 9.9
+    },
+    "desvio_puntos": {
+      "suave": 1.03,
+      "intermitente": -1.25,
+      "erratica": -0.19,
+      "lumpy": 0.51
+    },
+    "tolerancia_puntos": 3.0,
+    "gate_ok": true
+  },
+  "intermitencia_cliente_producto": {
+    "objetivo_pct": {
+      "1-2": 53.5,
+      "3-5": 20.4,
+      "6-11": 14.2,
+      "12-23": 8.7,
+      "24+": 3.2
+    },
+    "logrado_pct": {
+      "1-2": 51.6,
+      "3-5": 21.3,
+      "6-11": 13.3,
+      "12-23": 7.6,
+      "24+": 6.2
+    },
+    "nota": "calibración best-effort, no forma parte del gate de S0"
+  },
+  "productos_sin_ancla_propia": {
+    "objetivo_pct": 25.4,
+    "logrado_pct": 30.0
+  },
+  "notas_credito": {
+    "objetivo_pct_comprobantes": 9.5
+  }
+}

@@ -73,15 +73,15 @@ Este repo se comparte entre personas de dentro y fuera de la empresa cliente. Po
 
 *(Instrucción para el agente: al cerrar una sesión de trabajo relevante, actualizá SOLO esta sección con el estado y los pendientes accionables, con fecha. Mantenela corta — máx ~15 líneas; el detalle va en `planning/roadmap.md`.)*
 
-**Última actualización:** 2026-07-25 — ADR-007/008 ratificados; track de desarrollo del motor definido (ADR-009 propuesta).
+**Última actualización:** 2026-07-27 — S0 del motor cerrado (T0.1–T0.3); arranca M1.
 
 - Release actual: **R0 — Validación y diseño** (ver `planning/roadmap.md`).
 - Hecho: repo publicado en GitHub; docs base + ADR-001..008 (**007 y 008 Aceptada**, ratificados 2026-07-25 por autoridad técnica del ML Specialist); viabilidad y plan del motor; **EDA sobre datos reales** (`motor/eda/eda-2026-07-15.md`: 96 meses desde 2018-07, ~2.200 productos activos, 48/31/10/11% de cuadrantes de intermitencia, 25,4% de productos sin ancla propia, 53,5% de pares cliente×producto con ≤2 compras en 36m); **contrato de ingesta v0.9** (`docs/contrato-ingesta.md`); **track del motor** (`motor/roadmap-motor.md`: M1–M4 desglosados, cronograma S0–S15, gates de promoción).
 - Frontera acordada 2026-07-15: el cliente entrega **ventas unificadas** (la unión factura/remito y la dedup son del exportador del lado cliente); DemandSync valida garantías, no re-deduplica. `tipo_comprobante` retirado del contrato y del DER.
 - **ADR-009 (Propuesta, 2026-07-25):** el motor accede a datos vía repositorio abstracto (archivos locales → PostgreSQL en M4). Consecuencia de planificación: **M1–M3 del motor corren en paralelo a R1, no lo esperan**; la única dependencia dura es el swap de M4. A ratificar con el Backend Dev.
+- **S0 del motor cerrado 2026-07-27** (`motor/roadmap-motor.md` §4/§9): T0.2 (paquete `demandsync-motor` instalable) + T0.3 (`motor/src/motor/datos/`: repositorio de archivos parquet + diccionario espejo del DER + test de conformidad) + T0.1 (`datasets/sintetico/`: generador determinístico por semilla, top-down con rechazo/resorteo por producto — gate de cuadrantes de intermitencia cumplido, desvíos ≤1,25 pts sobre ±3 de tolerancia; ver `datasets/sintetico/manifiesto.json`). Arranca **M1** (arnés de backtesting) en S1.
 - Pendientes inmediatos:
   - Resolver **P1–P4 del contrato** (P1 = exportador unificado del lado cliente, lotes, `precio` con/sin descuento, criterio `activo`) → congela v1.0.
   - Aplicar impacto de ADR-007/008 al DER, CU y Plan de Pruebas UTN + de ADR-009 a `arquitectura.md` (Analista Funcional — ver `planning/roadmap.md`).
   - Correcciones C1–C8 al DER y T1–T6/CP-* al plan de pruebas (Analista Funcional).
-  - **S0 del motor:** generador sintético (T0.1, ⬜) y capa de datos (T0.3, ⬜) — desbloquean al equipo. Esqueleto del paquete (T0.2) ✅ 2026-07-25.
-- Primer código del repo: `motor/` — esqueleto del paquete `demandsync-motor` (instalable en editable, `pytest`+`ruff` verdes, sin lógica de negocio todavía). **R1 (ingesta) sigue bloqueado por el contrato**; el motor ya no.
+- Código del repo: `motor/` — paquete `demandsync-motor` instalable + `motor/src/motor/datos/` (repositorio de archivos parquet, diccionario espejo del DER, test de conformidad de esquema); `datasets/sintetico/` — generador sintético. Sin lógica de negocio/modelos del motor todavía (M1 es el próximo paso). **R1 (ingesta) sigue bloqueado por el contrato**; el motor ya no.

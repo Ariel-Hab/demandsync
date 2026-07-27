@@ -10,9 +10,9 @@
 
 En la máquina autorizada (acceso al snap del cliente), fuera del repo. El ML Specialist corre ahí los experimentos de validación y publica al repo solo métricas agregadas y conclusiones (ej. tablas WAPE por nivel), nunca registros.
 
-## Pendiente (R0) — generador sintético
+## Generador sintético — `datasets/sintetico/` (T0.1, ✅ 2026-07-27)
 
-Script `datasets/sintetico/generar_sintetico.py`, parametrizado por las estadísticas del EDA real (**sin copiar registros**). Planificado en [`motor/roadmap-motor.md`](../motor/roadmap-motor.md) §4 (S0).
+`datasets/sintetico/generar_sintetico.py`, parametrizado por las estadísticas del EDA real (**sin copiar registros**). Ver [`datasets/sintetico/README.md`](sintetico/README.md) para cómo correrlo y el diseño; [`motor/roadmap-motor.md`](../motor/roadmap-motor.md) §4 para el contexto de S0.
 
 **Dos salidas, no una:**
 
@@ -25,4 +25,4 @@ Como (2) se deriva de (1) por una agregación conocida y sin ambigüedad, **el E
 
 **Determinismo:** el generador corre por semilla fija. Se commitean el **script, la semilla y el manifiesto**, no los archivos generados — cualquiera reproduce el mismo dataset. La carpeta de salida va al `.gitignore`.
 
-**Criterio de aceptación:** el perfil de intermitencia del dataset generado, recalculado con el mismo código del EDA, cae dentro de ±3 puntos de los cuadrantes reales.
+**Criterio de aceptación (cumplido):** el perfil de intermitencia del dataset generado, recalculado con el mismo código del EDA, cae dentro de ±3 puntos de los cuadrantes reales — ver `sintetico/manifiesto.json` (desvíos máximos: 1,25 pts).
