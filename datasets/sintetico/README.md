@@ -31,7 +31,10 @@ motor/.venv/Scripts/python -m datasets.sintetico.generar_sintetico \
 
 Es **top-down por producto, con rechazo/resorteo**: a cada producto se le asigna un arquetipo
 Syntetos-Boylan (suave/intermitente/errática/lumpy) según las proporciones del EDA; se simula
-su serie de 96 meses y se reclasifica con el mismo criterio ADI/CV² del EDA (`clasificacion.py`)
+su serie de 96 meses y se reclasifica con el mismo criterio ADI/CV² del EDA —usando
+**`motor.clasificacion`, el clasificador del motor** (`clasificacion.py` acá es solo el
+adaptador); que el generador calibre con el mismo código que después mide el motor es lo
+que hace que este gate signifique algo—
 — si no cae en su cuadrante, se resortean los parámetros (hasta `MAX_INTENTOS_CALIBRACION_PRODUCTO`
 veces). Recién con la serie de producto ya calibrada se reparte entre un pool de clientes
 elegibles (tamaño de pool correlacionado con el arquetipo) para producir la intermitencia

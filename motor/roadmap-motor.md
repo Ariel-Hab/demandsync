@@ -15,7 +15,7 @@
 - El cronograma está en **semanas relativas**: **S0 = semana del lunes 2026-07-27**, S1 la siguiente, y así.
 - Una "semana" es **una unidad de esfuerzo**, no un compromiso de fecha. El supuesto de capacidad es dedicación de estudiante part-time; si la capacidad real difiere, el cronograma se escala proporcionalmente en vez de recortar alcance en silencio.
 - Las fechas absolutas se pegan cuando el PM confirme el calendario de entregas UTN. **No se inventan acá.**
-- Al cerrar cada hito: actualizar la tabla de §7, y `planning/roadmap.md` + `CLAUDE.md` §7 según la regla de CLAUDE.md §6.
+- Al cerrar cada unidad de trabajo: actualizar su fila en **§5–§8** y la tabla de seguimiento de **§9**, más `planning/roadmap.md` + `CLAUDE.md` §7 según la regla de CLAUDE.md §6.
 
 ## 2. Punto de partida (2026-07-25)
 
@@ -25,7 +25,10 @@
 | Decisiones de diseño del motor (8/8) | ✅ `plan-diseno.md` §Decisiones |
 | ADR-007 (unidades) / ADR-008 (WAPE·MASE·sesgo) | ✅ Aceptadas 2026-07-25 |
 | Generador de dataset sintético | ✅ 2026-07-27 — ver §9 |
-| Código del motor | ✅ 2026-07-27 — esqueleto + capa de datos (T0.2/T0.3), ver §9 |
+| Código del motor | ✅ 2026-07-27 — S0 (paquete + capa de datos) y M1.0–M1.4 (arnés, métricas, red anti-leakage, clasificador), ver §9 |
+
+> Esta tabla es la foto del **arranque del track**; el estado vigente está en **§9**, que
+> es la superficie de seguimiento. Si las dos difieren, gana §9.
 
 **Consecuencia:** el track arranca en S0 con el desbloqueo (generador + esqueleto + capa de datos) y entra en M1 en S1. El EDA ya calibró los parámetros del generador (EDA §8), así que S0 no requiere volver a la máquina autorizada.
 

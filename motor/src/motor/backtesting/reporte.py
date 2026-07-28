@@ -55,9 +55,9 @@ def construir_reporte(
     - `por_nivel_y_horizonte`: el mismo corte pero al **nivel** producto / categoría /
       total, que es la lectura que pide ADR-008 y sobre la que se decide el gate de M2.
     - `por_categoria`: solo si el reporte trae `columna_categoria`.
-    - `por_cuadrante`: solo si trae `columna_cuadrante` — se puebla en **M1.4**, cuando
-      el clasificador ADI/CV² entre al motor. Hasta entonces la tabla no aparece, y su
-      ausencia es visible en el markdown en vez de pasar desapercibida.
+    - `por_cuadrante`: solo si trae `columna_cuadrante`, que pone
+      `motor.clasificacion.etiquetar()`. Si falta, la tabla no aparece y su ausencia queda
+      escrita en el markdown en vez de pasar desapercibida.
     - `mase_por_horizonte`: solo si se pasa `train_df` (MASE necesita la historia).
 
     No calcula MAPE: ADR-008 lo deja solo para comunicación en niveles agregados, y
@@ -151,9 +151,10 @@ def a_markdown(tablas: dict[str, pd.DataFrame], titulo: str, notas: str = "") ->
         ]
     if "por_cuadrante" not in tablas:
         partes += [
-            "> Sin desagregado **por cuadrante de intermitencia**: requiere la columna "
-            "`cuadrante`, que entra con M1.4 (clasificador ADI/CV²). El gate de M1.2 lo "
-            "exige, así que este reporte todavía no lo cumple del todo.",
+            "> Sin desagregado **por cuadrante de intermitencia**: falta la columna "
+            "`cuadrante`. Agregala con `motor.clasificacion.etiquetar()` antes de armar "
+            "las tablas. El gate de M1.2 la exige, así que este reporte no lo cumple del "
+            "todo y no es congelable como referencia.",
             "",
         ]
 

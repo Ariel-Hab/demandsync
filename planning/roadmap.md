@@ -22,9 +22,10 @@ Fase pre-código. Objetivo: que cada módulo tenga contrato, plan y criterio de 
 | Resolver P1–P4 del contrato (P1 = **exportador de ventas unificadas del lado cliente**; lotes; semántica `precio`; criterio `activo`) | Lado cliente + Analista | ⬜ |
 | EDA sobre datos reales (perfil de intermitencia, dedup, ancla, calidad) | ML Specialist | ✅ 2026-07-15 — `motor/eda/eda-2026-07-15.md` |
 | Track de desarrollo del motor (`motor/roadmap-motor.md`: M1–M4 desglosados, cronograma S0–S15, gates) | ML Specialist | ✅ 2026-07-25 |
-| Generador de dataset sintético para el equipo (`datasets/sintetico/`) — dos salidas: renglones del contrato + hechos mensuales | ML Specialist | ⬜ planificado en S0 del track del motor |
+| Generador de dataset sintético para el equipo (`datasets/sintetico/`) — dos salidas: renglones del contrato + hechos mensuales | ML Specialist | ✅ 2026-07-27 — determinístico por semilla; gate de intermitencia cumplido (desvíos ≤1,25 pts sobre ±3). Ya usable por backend (probar el ETL) y frontend (mockear) |
 | **Ratificar ADR-009** (frontera de datos del motor: repositorio abstracto, motor desacoplado de R1) | Backend Dev | ⬜ no bloquea M1–M3; si se rechaza, rediseño de la capa de datos antes de M4 |
 | Aplicar impacto de ADR-009 a `docs/arquitectura.md` (§Flujo de datos, §Entorno de desarrollo) **una vez ratificado** | Analista Funcional (con Backend) | ⬜ |
+| Corregir el encabezado de `docs/arquitectura.md`: dice "diseño aprobado a nivel documental; **sin código**" y ya no es cierto — el motor tiene paquete instalable, capa de datos, arnés de backtesting y clasificador (ver `motor/roadmap-motor.md` §9) | Analista Funcional | ⬜ |
 | Aplicar impacto de **ADR-010** (demanda cero explícita) al Plan de Pruebas: el supuesto de **demanda censurada** pasa de nota a criterio explícito — sin histórico de stock, un mes en cero puede ser "nadie lo pidió" o "no había stock" y el motor los trata igual (ya documentado en `motor/viabilidad.md` §3.5, ahora operativo en cada fila del panel) | Analista Funcional | ⬜ ADR ya Aceptada por el ML Specialist (es regla de medición interna del motor, no cambia hechos persistidos ni el contrato de ingesta) |
 | Definir stack frontend | Frontend Dev | ⬜ (no bloquea R1–R3) |
 

@@ -32,8 +32,11 @@ global-vs-baselines-<AAAA-MM-DD>.md      # M2.5 — champion/challenger contra e
    regenerá el reporte reponiendo los metadatos.
 2. **Desagregado por horizonte (1/3/6/12) y por nivel** (producto / categoría / total).
    Regla del gate de M1.2: ningún número global suelto sin desagregar.
-3. **Desagregado por cuadrante de intermitencia** — llega con M1.4. Hasta entonces
-   `a_markdown()` deja escrito que falta, para que su ausencia no se lea como cumplida.
+3. **Desagregado por cuadrante de intermitencia.** Lo produce `motor.clasificacion`:
+   `etiquetar(reporte, clasificar_series(hechos))` antes de armar las tablas. Es el corte
+   que más aporta —en el sintético el WAPE va de 0,51 en las series suaves a 1,63 en las
+   lumpy— y si falta, `a_markdown()` lo deja escrito para que su ausencia no se lea como
+   cumplida.
 4. **La columna `cobertura`**, y que sea 1,0 o esté explicado por qué no. Una tabla con
    cobertura baja tiene mejor WAPE por omitir series difíciles, no por predecir mejor.
 

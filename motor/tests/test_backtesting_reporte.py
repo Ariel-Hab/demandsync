@@ -156,8 +156,9 @@ def test_el_markdown_avisa_que_falta_el_corte_por_cuadrante(datos):
     reporte la trae — por ejemplo uno armado a mano para inspeccionar algo puntual."""
     md = a_markdown(construir_reporte(_correr(datos), columna_pred="pred"), titulo="Prueba")
 
-    assert "cuadrante" in md
-    assert "M1.4" in md
+    assert "Sin desagregado **por cuadrante de intermitencia**" in md
+    assert "etiquetar" in md, "el aviso tiene que decir cómo se arregla, no solo que falta"
+    assert "no es congelable" in md
 
 
 def test_con_la_columna_cuadrante_el_reporte_la_desagrega(datos):
@@ -175,7 +176,7 @@ def test_con_la_columna_cuadrante_el_reporte_la_desagrega(datos):
     assert set(tablas["por_cuadrante"].columns) == {
         "cuadrante", "horizonte", "wape", "sesgo", "n", "cobertura"
     }
-    assert "M1.4" not in md, "no debería avisar de un faltante que ya está cubierto"
+    assert "Sin desagregado" not in md, "no debería avisar de un faltante que ya está cubierto"
 
 
 def test_el_markdown_avisa_si_se_perdio_la_trazabilidad(datos):
