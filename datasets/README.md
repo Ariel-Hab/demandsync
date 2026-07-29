@@ -25,4 +25,6 @@ Como (2) se deriva de (1) por una agregación conocida y sin ambigüedad, **el E
 
 **Determinismo:** el generador corre por semilla fija. Se commitean el **script, la semilla y el manifiesto**, no los archivos generados — cualquiera reproduce el mismo dataset. La carpeta de salida va al `.gitignore`.
 
-**Criterio de aceptación (cumplido):** el perfil de intermitencia del dataset generado, recalculado con el mismo código del EDA, cae dentro de ±3 puntos de los cuadrantes reales — ver `sintetico/manifiesto.json` (desvíos máximos: 1,25 pts).
+**Criterio de aceptación (cumplido):** el perfil de intermitencia del dataset generado, recalculado con **el clasificador del motor** (`motor.clasificacion`, el mismo que después mide el backtest), cae dentro de ±3 puntos de los cuadrantes reales — ver `sintetico/manifiesto.json` (desvíos máximos: 1,25 pts).
+
+**Deuda conocida del generador — [`motor/roadmap-motor.md`](../motor/roadmap-motor.md) §12.1 (unidad T0.4).** Tres cosas que el dataset todavía no reproduce, verificadas: `cliente_feature` es una foto única de un solo mes (**precondición de M2.2**: no se puede usar como feature sin leakage), no hay meses con unidades netas negativas, y no modela altas de producto a mitad de historia (0 de 2.300 productos estrenan dentro de la ventana de clasificación). Leelo antes de usar el sintético para validar algo que dependa de esos casos.

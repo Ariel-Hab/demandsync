@@ -21,13 +21,31 @@ Todo lo que ocurre entre los hechos mensuales materializados y la tabla `PREDICC
 - El acceso a esas tablas es **a través de una interfaz de repositorio** con dos implementaciones —archivos locales y PostgreSQL— para que el motor se desarrolle y se evalúe sin depender del Release 1 (ADR-009, *Propuesta*: a ratificar con el Backend Dev).
 - El motor **no** expone HTTP ni lee JSON crudo del ERP: es una librería Python invocada por el job batch nocturno.
 
-## Desarrollo
+## Arranque desde cero
+
+Un clon nuevo **no tiene el dataset sintético**: `datasets/sintetico/salida/` está en
+`.gitignore` (se commitean el script, la semilla y el manifiesto, no los archivos). Sin
+regenerarlo se pueden correr los tests, pero no las validaciones a escala.
 
 ```bash
+# 1. entorno — el venv vive en motor/.venv y todos los comandos del repo lo asumen
 cd motor
-pip install -e ".[dev]"
-pytest
+python -m venv .venv
+.venv/Scripts/python -m pip install -e ".[dev]"     # Linux/macOS: .venv/bin/python
+
+# 2. tests
+.venv/Scripts/python -m pytest                       # toda la suite
+.venv/Scripts/python -m pytest -m innegociable       # solo la red anti-leakage (M1.3)
+
+# 3. dataset sintético — desde la RAÍZ del repo, ~1 min sin el export del contrato
+cd ..
+motor/.venv/Scripts/python -m datasets.sintetico.generar_sintetico --semilla 42 --sin-contrato
 ```
+
+Con `--semilla 42` el dataset es idéntico al que produjo
+`datasets/sintetico/manifiesto.json`, así que se puede verificar el gate de calibración
+comparando contra ese archivo. Quitá `--sin-contrato` solo si necesitás los
+`ventas_<AAAAMM>.json` del contrato de ingesta (tarda bastante más y pesa ~240 MB).
 
 Layout `src/`: el paquete importable es `motor` (`motor/src/motor/`). Ya existen `datos/`
 (T0.3), `backtesting/` (M1.0–M1.3, ver su propio

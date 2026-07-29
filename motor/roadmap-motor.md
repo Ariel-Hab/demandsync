@@ -102,7 +102,7 @@ Objetivo: que en S1 pueda escribir el arnés sin depender de nadie.
 | # | Unidad de trabajo | Semana | Entregable / gate |
 |---|---|---|---|
 | **M2.1** | **Transformador de deflación (ADR-002)**: ancla por producto + índices de nivel (media geométrica ponderada) + fallback categoría → laboratorio → IPC + clamp de ratios. Los casos CP-INF-01..05 se escriben como tests unitarios del transformador | S5 | Componente reutilizable + tests CP-INF-*; el fallback se testea con la misma prioridad que el ancla directa (lo necesita el 25,4% de los productos — EDA §4) |
-| **M2.2** | Features: lags (1,2,3,6,12), rolling means (3,6,12), mes del año, `mismo_mes_año_anterior`, categoría/familia/laboratorio, `CLIENTE_FEATURE`, precio real deflactado y su variación | S5–S6 | Construcción de features pasando el test M1.3 |
+| **M2.2** | Features: lags (1,2,3,6,12), rolling means (3,6,12), mes del año, `mismo_mes_año_anterior`, categoría/familia/laboratorio, `CLIENTE_FEATURE`, precio real deflactado y su variación | S5–S6 | Construcción de features pasando el test M1.3. **Precondición: T0.4** — `CLIENTE_FEATURE` del sintético es hoy una foto única, así que no se puede consumir sin leakage ni verificar con la red de M1.3 (§12.1) |
 | **M2.3** | LightGBM global con `mlforecast`, **multi-horizonte directo** (un modelo por h ∈ {1,3,6,12}) | S6–S7 | Corre dentro del arnés, comparable 1:1 con el piso |
 | **M2.4** | Intervalos: quantile regression P10/P50/P90 | S7 | Cobertura empírica de los intervalos reportada (¿el P10–P90 cubre ~80%?) |
 | **M2.5** | **Champion/challenger por serie** + reporte comparativo contra el piso congelado, sobre sintético **y** real | S8 | `motor/backtests/global-vs-baselines-<fecha>.md` |
@@ -149,6 +149,7 @@ Objetivo: que en S1 pueda escribir el arnés sin depender de nadie.
 | S1–S2 | M1 | Arnés · métricas · test anti-leakage · clasificador de cuadrantes | M1.0–M1.4 | ✅ 2026-07-27 — **M1.0** (§5.1: los 9 defectos del relevamiento, con test de regresión cada uno), **M1.1** (arnés + corridas identificadas), **M1.2** (métricas por nivel + reporte tabular con todos sus cortes), **M1.3** (red anti-leakage, `pytest -m innegociable`) y **M1.4** (clasificador de cuadrantes, con la dependencia `datasets/`→motor invertida). **82 tests verdes**, ningún `xfail`, `ruff` limpio. El arnés ya puede medir baselines |
 | S3 | M1 | Baselines + intermitentes · tabla sintética | M1.5–M1.7 | ⬜ |
 | S4 | M1 | **Piso real congelado** (máquina autorizada) | M1.8 | ⬜ |
+| S4–S5 | — | Deuda del generador (precondición de M2.2, no bloquea M1) | T0.4 | ⬜ ver §12.1 |
 | S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | ⬜ |
 | S7 | M2 | LightGBM global · cuantiles | M2.3–M2.4 | ⬜ |
 | S8 | M2 | **Champion/challenger vs piso** | M2.5 | ⬜ |
@@ -185,6 +186,52 @@ Objetivo: que en S1 pueda escribir el arnés sin depender de nadie.
 | M3 se estira y come M4 | S11 sin propensión andando | Orden de recorte declarado en §7 |
 | El extract propio del snap difiere del ETL de R1 (dos definiciones de "venta mensual") | Diferencias al comparar M4.2 contra M1.8 | El cross-check del generador (§4) más el diccionario compartido; documentar toda diferencia como hallazgo, no ajustar a mano |
 
-## 12. Fuera de este track
+## 12. Deuda conocida y trampas (para quien siga)
+
+**Cómo levantar el entorno y regenerar el dataset:** `motor/README.md` §Arranque desde cero.
+El dataset sintético **no está en el repo**, así que ninguna validación a escala corre en un
+clon nuevo hasta regenerarlo.
+
+### 12.1 Deuda del generador sintético → **T0.4**
+
+Las tres se verificaron corriendo contra el dataset generado (semilla 42). Ninguna bloquea
+M1, pero **la primera bloquea M2.2** y la tercera debilita lo que el dataset puede validar.
+
+| # | Qué le falta al generador | Por qué importa |
+|---|---|---|
+| 1 | **`cliente_feature` es una foto única** — verificado: una sola `fecha_calculo` (2026-06) para las 1.600 filas | **M2.2 la usa como feature.** Un predictor que la consuma en un corte de 2024 estaría viendo el futuro. El arnés ya tiene el hook (`tablas_auxiliares`) pero no hay nada que recortar: el generador tiene que emitir una versión por mes. Hoy la única defensa es que ningún predictor la usa todavía |
+| 2 | **Ningún mes con unidades netas negativas** — verificado: 0 filas con `unidades < 0` en las dos tablas de hechos | El ~9,5% de notas de crédito existe solo en el JSON del contrato; al agregar por mes el neto siempre queda positivo. En la realidad un mes puede cerrar negativo (más devoluciones que ventas), y ni el motor ni el ETL de R1 lo ejercitan nunca |
+| 3 | **No modela altas de producto** — verificado: **0 de 2.300 productos** tienen su primera venta dentro de la ventana de clasificación de 36 meses; la última primera-venta del dataset es de 2020 | La regla de calendario de **ADR-010** (arrancar en la primera venta de la serie) **no la ejercita ningún dato a escala**, solo tests unitarios. En datos reales los productos nuevos existen y son los de mayor incertidumbre. Un ADR-010 mal implementado pasaría toda validación sintética — de hecho pasó: el bug de la clave de `groupby` de M1.4 no lo detectó el sintético |
+
+| # | Unidad de trabajo | Semana | Entregable / gate |
+|---|---|---|---|
+| **T0.4** | **Deuda del generador**: `cliente_feature` versionada por mes; altas y bajas de producto a mitad de historia; meses de neto negativo | S4–S5 (antes de M2.2) | Manifiesto que reporte: nº de `fecha_calculo` distintas > 1, % de productos con alta dentro de la ventana > 0, y nº de meses con neto negativo > 0. **No bloquea M1**; sí es precondición de M2.2 |
+
+### 12.2 Trampas de configuración
+
+- **Con `n_cortes = N`, el horizonte máximo *medible* es N**, porque el corte más viejo
+  queda a N meses del final. Para que el reporte tenga los 1/3/6/12 que exige el gate de
+  M1.2 hacen falta **más de 12 cortes**; con el default de 18 está bien, pero una corrida
+  con `n_cortes=6` produciría una tabla que llega a h=6 y **no avisa**.
+- **`reporte.attrs["corrida"]` se pierde en un `merge`** (pandas lo descarta). La columna
+  `id_corrida` sobrevive. Si cruzás el reporte con el catálogo antes de armar las tablas,
+  guardate la `Corrida` y reponela, o el reporte sale anónimo y no es congelable.
+- **Al clasificar para enrutar método** (M1.5/M1.6) hay que pasar `hasta=corte`. Con el
+  default (último mes de los datos) el modelo elige su método viendo el futuro.
+- **Los números publicados hasta hoy no dicen nada de calidad predictiva:** salen de un
+  predictor de juguete ("último valor conocido") que solo existe en los tests. El primer
+  número con significado sale de M1.7, y el que vale es M1.8.
+
+### 12.3 Decisiones abiertas que no son mías
+
+- **ADR-009 sigue en *Propuesta*** — a ratificar con el Backend Dev. No bloquea M1–M3; si
+  se rechaza, la capa de datos se rediseña antes de M4.
+- **Métricas del modelo de propensión (M3.2)**: WAPE/MASE/sesgo no aplican a una
+  clasificación binaria. Hay que fijar PR-AUC / lift@k / calibración **como ADR nuevo**
+  antes de cerrar M3.2 (ver la nota de §7).
+- **MAPE comunicacional** (ADR-008: solo en niveles agregados, para la UI) no está
+  implementado. Probablemente sea del frontend (R4); acordarlo, no asumirlo.
+
+## 13. Fuera de este track
 
 Deep learning (LSTM/transformers), pronóstico intra-mensual, optimización de precios, demanda censurada por quiebres, clima como driver de precisión (queda como feature explicativa/mock — viabilidad §3.4). Tampoco entra: re-deduplicar factura/remito (es del exportador del lado cliente desde 2026-07-15), reglas de abastecimiento (R3, backend), ni dashboard (R4, frontend).
