@@ -1,6 +1,6 @@
 {
   "semilla": 42,
-  "fecha_generacion": "2026-07-27",
+  "fecha_generacion": "2026-07-31",
   "n_productos": 2300,
   "n_clientes": 1600,
   "n_meses": 96,
@@ -12,16 +12,16 @@
       "lumpy": 11.1
     },
     "logrado_pct": {
-      "suave": 48.8,
-      "intermitente": 29.7,
-      "lumpy": 11.6,
-      "erratica": 9.9
+      "suave": 47.8,
+      "intermitente": 32.1,
+      "lumpy": 11.2,
+      "erratica": 8.9
     },
     "desvio_puntos": {
-      "suave": 1.03,
-      "intermitente": -1.25,
-      "erratica": -0.19,
-      "lumpy": 0.51
+      "suave": -0.04,
+      "intermitente": 1.21,
+      "erratica": -1.17,
+      "lumpy": 0.1
     },
     "tolerancia_puntos": 3.0,
     "gate_ok": true
@@ -35,19 +35,87 @@
       "24+": 3.2
     },
     "logrado_pct": {
-      "1-2": 51.6,
-      "3-5": 21.3,
-      "6-11": 13.3,
-      "12-23": 7.6,
-      "24+": 6.2
+      "1-2": 53.0,
+      "3-5": 21.1,
+      "6-11": 12.9,
+      "12-23": 7.4,
+      "24+": 5.6
     },
     "nota": "calibración best-effort, no forma parte del gate de S0"
   },
   "productos_sin_ancla_propia": {
     "objetivo_pct": 25.4,
-    "logrado_pct": 30.0
+    "logrado_pct": 29.5
   },
   "notas_credito": {
     "objetivo_pct_comprobantes": 9.5
+  },
+  "cliente_feature_versionada": {
+    "n_fecha_calculo": 32,
+    "paso_meses": 3,
+    "gate_ok": true
+  },
+  "meses_degenerados": {
+    "neto_negativo": 259,
+    "neto_cero": 4020,
+    "precio_implicito_negativo": 23,
+    "sin_precio_prom": 4020,
+    "gate_ok": true
+  },
+  "altas_y_bajas": {
+    "objetivo_pct_alta_en_ventana": 20.0,
+    "logrado_pct_alta_en_ventana": 20.8,
+    "logrado_pct_alta_posterior_al_inicio": 66.2,
+    "objetivo_pct_baja": 5.0,
+    "logrado_pct_baja": 5.4,
+    "criterio_baja": "silencio > 24m que además supera el hueco más largo del propio producto",
+    "tolerancia_puntos": 3.0,
+    "gate_ok": true
+  },
+  "categorias": {
+    "objetivo_pct": {
+      "CLINICO": 33.03,
+      "SIN CATEGORIA": 22.43,
+      "ANTIPARASITARIO EXTERNO": 16.4,
+      "HIGIENE Y BELLEZA": 9.73,
+      "ANTIPARASITARIO INTERNO": 6.21,
+      "CARDIOLOGICO": 2.88,
+      "DESCARTABLES": 2.33,
+      "ALIMENTO": 2.1,
+      "BIOLOGICO": 2.01,
+      "ANTIARTROSICO": 1.96,
+      "ACCESORIO": 0.87,
+      "HIGIENE Y BELLEZA (odontologico)": 0.05
+    },
+    "logrado_pct": {
+      "CLINICO": 34.22,
+      "SIN CATEGORIA": 21.78,
+      "ANTIPARASITARIO EXTERNO": 16.7,
+      "HIGIENE Y BELLEZA": 9.52,
+      "ANTIPARASITARIO INTERNO": 6.3,
+      "DESCARTABLES": 2.39,
+      "CARDIOLOGICO": 2.3,
+      "ALIMENTO": 2.09,
+      "BIOLOGICO": 1.78,
+      "ANTIARTROSICO": 1.78,
+      "ACCESORIO": 1.09,
+      "HIGIENE Y BELLEZA (odontologico)": 0.04
+    },
+    "desvio_puntos": {
+      "CLINICO": 1.19,
+      "SIN CATEGORIA": -0.65,
+      "ANTIPARASITARIO EXTERNO": 0.3,
+      "HIGIENE Y BELLEZA": -0.21,
+      "ANTIPARASITARIO INTERNO": 0.09,
+      "CARDIOLOGICO": -0.58,
+      "DESCARTABLES": 0.06,
+      "ALIMENTO": -0.01,
+      "BIOLOGICO": -0.23,
+      "ANTIARTROSICO": -0.18,
+      "ACCESORIO": 0.22,
+      "HIGIENE Y BELLEZA (odontologico)": -0.01
+    },
+    "tolerancia_puntos": 3.0,
+    "gate_ok": true
   }
 }

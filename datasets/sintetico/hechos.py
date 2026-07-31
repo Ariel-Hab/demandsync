@@ -25,7 +25,12 @@ def generar_todo(
     detalle_filas = []
     for _, prod in productos.iterrows():
         serie = simular_serie_producto(
-            rng, prod["arquetipo"], prod["tamanio_base"], prod["sin_ancla_propia"]
+            rng,
+            prod["arquetipo"],
+            prod["tamanio_base"],
+            prod["sin_ancla_propia"],
+            mes_alta=int(prod["mes_alta"]),
+            mes_baja=int(prod["mes_baja"]),
         )
         series_producto[int(prod["id_producto"])] = serie
 
@@ -43,6 +48,7 @@ def generar_todo(
     detalle["precio_efectivo"] = detalle["precio_lista"] * (1 - detalle["descuento"])
     detalle["revenue"] = detalle["unidades"] * detalle["precio_efectivo"]
     detalle["anio_mes"] = MESES[detalle["mes_idx"].to_numpy()]
+    detalle = _sembrar_devoluciones(rng, detalle)
 
     hecho_cliente_producto = detalle[["id_cliente", "id_producto", "anio_mes", "unidades", "revenue"]].astype(
         {"id_cliente": "int64", "id_producto": "int64", "unidades": "float64", "revenue": "float64"}
@@ -51,7 +57,13 @@ def generar_todo(
     hecho_producto = hecho_cliente_producto.groupby(["id_producto", "anio_mes"], as_index=False).agg(
         unidades=("unidades", "sum"), revenue=("revenue", "sum")
     )
-    hecho_producto["precio_prom"] = hecho_producto["revenue"] / hecho_producto["unidades"]
+    # `precio_prom` con neto cero queda **NaN, no infinito** — misma regla que
+    # `motor/scripts/extraer_snap.py:187` sobre datos reales. Un mes de neto cero no tiene
+    # precio, y un infinito metido en la cadena de deflación de M2 se propaga en silencio.
+    unidades_netas = hecho_producto["unidades"]
+    hecho_producto["precio_prom"] = hecho_producto["revenue"] / unidades_netas.where(
+        unidades_netas != 0
+    )
     hecho_producto = hecho_producto.astype(
         {"id_producto": "int64", "unidades": "float64", "revenue": "float64", "precio_prom": "float64"}
     )
@@ -73,13 +85,132 @@ def generar_todo(
     return tablas, series_producto, productos
 
 
+def _sembrar_devoluciones(rng: np.random.Generator, detalle: pd.DataFrame) -> pd.DataFrame:
+    """Mete devoluciones a nivel de HECHOS, no solo en el JSON del contrato (T0.4 #2).
+
+    El generador ya emitía ~9,5% de notas de crédito, pero solo al exportar
+    `ventas_<AAAAMM>.json`, y capadas al 10-40% de un renglón. Resultado: **cero filas con
+    unidades netas negativas** en las tablas que lee el motor, cuando los datos reales
+    traen 281. Ni el motor ni el ETL de R1 ejercitaban nunca ese camino.
+
+    Siembra tres casos, todos medidos sobre el extract:
+
+    - **neto negativo** (0,205%): la devolución supera las ventas del producto en ese mes.
+    - **neto exactamente cero** (3,53%): deja `precio_prom` indefinido — el insumo
+      degenerado que la deflación de M2.1 tiene que sobrevivir.
+    - **precio implícito negativo** (0,016%): la devolución va a un precio distinto del de
+      la venta, así que unidades y revenue netean con **signos opuestos** (§5.5 #6). Es el
+      caso contra el que existe el clamp de ratios de M2.1, y no se produce solo.
+    """
+    neto = detalle.groupby(["id_producto", "anio_mes"], as_index=False).agg(
+        unidades=("unidades", "sum"), revenue=("revenue", "sum")
+    )
+    neto = neto[neto["unidades"] > 0].reset_index(drop=True)
+    if neto.empty:
+        return detalle
+
+    n_total = len(neto)
+    cupos = {
+        "negativo": round(n_total * P.PORCENTAJE_MESES_NETO_NEGATIVO),
+        "cero": round(n_total * P.PORCENTAJE_MESES_NETO_CERO),
+        "cruzado": round(n_total * P.PORCENTAJE_MESES_PRECIO_CRUZADO),
+    }
+    elegidos = rng.choice(n_total, size=min(sum(cupos.values()), n_total), replace=False)
+
+    # Un representante por (producto, mes) para heredar cliente, mes_idx y precio: la
+    # devolución tiene que ser de alguien que efectivamente compró.
+    representantes = detalle.drop_duplicates(subset=["id_producto", "anio_mes"]).set_index(
+        ["id_producto", "anio_mes"]
+    )
+
+    filas, desde = [], 0
+    for caso, cupo in cupos.items():
+        for pos in elegidos[desde : desde + cupo]:
+            objetivo = neto.iloc[pos]
+            base = representantes.loc[(objetivo["id_producto"], objetivo["anio_mes"])]
+            unidades_netas, revenue_neto = objetivo["unidades"], objetivo["revenue"]
+
+            if caso == "cero":
+                devueltas = unidades_netas
+                precio = base["precio_efectivo"]
+            elif caso == "negativo":
+                devueltas = unidades_netas * rng.uniform(1.05, 1.60)
+                precio = base["precio_efectivo"]
+            else:
+                devueltas = unidades_netas * rng.uniform(1.05, 1.60)
+                # Precio de devolución por debajo del promedio del mes: alcanza para que
+                # el revenue quede positivo mientras las unidades ya son negativas.
+                precio = 0.5 * revenue_neto / devueltas
+
+            filas.append(
+                {
+                    "id_cliente": base["id_cliente"],
+                    "mes_idx": base["mes_idx"],
+                    "unidades": -float(devueltas),
+                    "id_producto": objetivo["id_producto"],
+                    "precio_lista": base["precio_lista"],
+                    "descuento": base["descuento"],
+                    "precio_efectivo": precio,
+                    "revenue": -float(devueltas) * precio,
+                    "anio_mes": objetivo["anio_mes"],
+                }
+            )
+        desde += cupo
+
+    if not filas:
+        return detalle
+    return pd.concat([detalle, pd.DataFrame(filas)], ignore_index=True)
+
+
 def _construir_cliente_feature(
     hecho_cliente_producto: pd.DataFrame, catalogo_producto: pd.DataFrame, clientes: pd.DataFrame
 ) -> pd.DataFrame:
-    ultimo_mes = MESES[-1]
+    """Una versión de la tabla **por cada `PASO_MESES_CLIENTE_FEATURE` meses** (T0.4 #1).
+
+    Antes emitía una sola foto, con `fecha_calculo` del último mes para todas las filas.
+    M2.2 la quiere como feature, y un predictor que la consumiera en un corte de 2024
+    estaría leyendo volumen y recency calculados con datos de 2026. El arnés ya tenía el
+    hook para recortarla (`tablas_auxiliares`, recorta por `fecha_calculo <= corte`), pero
+    no había nada que recortar.
+
+    **El esquema no cambia** — `fecha_calculo` ya estaba en el diccionario. Lo que cambia
+    es la cardinalidad: la clave pasa de `id_cliente` a `(id_cliente, fecha_calculo)`.
+
+    Cada versión se calcula **solo con datos hasta su propia fecha**. Si se calculara sobre
+    la historia completa y solo se le cambiara la etiqueta, el leakage seguiría ahí y
+    encima invisible.
+    """
     df = hecho_cliente_producto.merge(
         catalogo_producto[["id_producto", "categoria"]], on="id_producto", how="left"
     )
+    paso = P.PASO_MESES_CLIENTE_FEATURE
+    fechas = MESES[paso - 1 :: paso]
+
+    versiones = [
+        _version_cliente_feature(df[df["anio_mes"] <= fecha], clientes, fecha) for fecha in fechas
+    ]
+    versiones = [v for v in versiones if not v.empty]
+    return pd.concat(versiones, ignore_index=True).astype(
+        {
+            "id_cliente": "int64",
+            "categoria_principal": "object",
+            "frecuencia_compra": "object",
+            "volumen_anual": "float64",
+            "valor_anual_estimado": "float64",
+            "tendencia_volumen_3m": "float64",
+            "recency_dias": "int64",
+            "fecha_calculo": "datetime64[ns]",
+        }
+    )
+
+
+def _version_cliente_feature(
+    df: pd.DataFrame, clientes: pd.DataFrame, ultimo_mes: pd.Timestamp
+) -> pd.DataFrame:
+    """La tabla tal como se habría calculado el `ultimo_mes`, con `df` ya recortado a esa
+    fecha por el llamador."""
+    if df.empty:
+        return pd.DataFrame()
 
     ventana_12m_ini = ultimo_mes - pd.DateOffset(months=11)
     agg_12m = df[df["anio_mes"] >= ventana_12m_ini].groupby("id_cliente").agg(

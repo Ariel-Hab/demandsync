@@ -74,7 +74,134 @@ def calcular_metricas(
         "notas_credito": {
             "objetivo_pct_comprobantes": round(P.PORCENTAJE_NOTAS_CREDITO * 100, 1),
         },
+        **_metricas_t0_4(tablas),
     }
+
+
+def _metricas_t0_4(tablas: dict) -> dict:
+    """Las cuatro condiciones de gate de T0.4.
+
+    Todas se miden sobre la **salida**, no sobre los parámetros: que `TASA_BAJA_OBJETIVO`
+    diga 5% no prueba que el dataset tenga 5% de bajas. Y se miden con la **misma
+    definición** con que se midieron los datos reales, o los números no son comparables
+    contra los objetivos del roadmap §12.1.
+    """
+    hecho_producto = tablas["hecho_venta_mensual_producto"]
+    catalogo = tablas["catalogo_producto"]
+    cliente_feature = tablas["cliente_feature"]
+
+    n_versiones = int(cliente_feature["fecha_calculo"].nunique())
+
+    negativos = int((hecho_producto["unidades"] < 0).sum())
+    ceros = int((hecho_producto["unidades"] == 0).sum())
+    cruzados = int(
+        ((hecho_producto["unidades"] < 0) & (hecho_producto["revenue"] > 0)).sum()
+    )
+    sin_precio = int(hecho_producto["precio_prom"].isna().sum())
+
+    altas, bajas = _altas_y_bajas(hecho_producto)
+    dist_categorias, desvios_categorias = _distribucion_categorias(catalogo)
+
+    return {
+        "cliente_feature_versionada": {
+            "n_fecha_calculo": n_versiones,
+            "paso_meses": P.PASO_MESES_CLIENTE_FEATURE,
+            "gate_ok": n_versiones > 1,
+        },
+        "meses_degenerados": {
+            "neto_negativo": negativos,
+            "neto_cero": ceros,
+            "precio_implicito_negativo": cruzados,
+            "sin_precio_prom": sin_precio,
+            "gate_ok": negativos > 0 and ceros > 0,
+        },
+        "altas_y_bajas": {
+            "objetivo_pct_alta_en_ventana": 20.0,
+            "logrado_pct_alta_en_ventana": altas["en_ventana"],
+            "logrado_pct_alta_posterior_al_inicio": altas["posterior_al_inicio"],
+            "objetivo_pct_baja": round(P.TASA_BAJA_OBJETIVO * 100, 1),
+            "logrado_pct_baja": bajas,
+            "criterio_baja": (
+                f"silencio > {P.MESES_MIN_SILENCIO_BAJA - 1}m que además supera el hueco "
+                "más largo del propio producto"
+            ),
+            "tolerancia_puntos": P.TOLERANCIA_CALIBRACION_PUNTOS,
+            "gate_ok": (
+                abs(altas["en_ventana"] - 20.0) <= P.TOLERANCIA_CALIBRACION_PUNTOS
+                and abs(bajas - P.TASA_BAJA_OBJETIVO * 100) <= P.TOLERANCIA_CALIBRACION_PUNTOS
+            ),
+        },
+        "categorias": {
+            "objetivo_pct": _objetivo_categorias(),
+            "logrado_pct": dist_categorias,
+            "desvio_puntos": desvios_categorias,
+            "tolerancia_puntos": P.TOLERANCIA_CATEGORIAS_PUNTOS,
+            "gate_ok": all(
+                abs(d) <= P.TOLERANCIA_CATEGORIAS_PUNTOS for d in desvios_categorias.values()
+            ),
+        },
+    }
+
+
+def _altas_y_bajas(hecho_producto: pd.DataFrame) -> tuple[dict, float]:
+    """% de productos con alta (dentro de la ventana y en total) y % de bajas.
+
+    El criterio de baja **no** es "sin venta hace más de N meses": con 42% de series
+    intermitentes, un hueco largo es comportamiento normal. Exige además que el silencio
+    final supere el hueco más largo que ese producto ya había tenido estando vivo. Es el
+    criterio con que se midió el 5,8% real, y medir de otra forma daría un número que no
+    se puede comparar contra nada.
+    """
+    con_venta = hecho_producto[hecho_producto["unidades"] > 0]
+    if con_venta.empty:
+        return {"en_ventana": 0.0, "posterior_al_inicio": 0.0}, 0.0
+
+    primer_mes = con_venta["anio_mes"].min()
+    ultimo_mes = con_venta["anio_mes"].max()
+    inicio_ventana = ultimo_mes - pd.DateOffset(months=P.VENTANA_INTERMITENCIA_MESES - 1)
+
+    n_bajas = 0
+    n_productos = 0
+    n_alta_en_ventana = 0
+    n_alta_posterior = 0
+    for _, grupo in con_venta.groupby("id_producto", sort=False):
+        meses = grupo["anio_mes"].sort_values().to_numpy()
+        n_productos += 1
+        if meses[0] > primer_mes:
+            n_alta_posterior += 1
+        if meses[0] >= inicio_ventana:
+            n_alta_en_ventana += 1
+
+        silencio = _distancia_meses(meses[-1], ultimo_mes)
+        huecos = [_distancia_meses(a, b) - 1 for a, b in zip(meses, meses[1:])]
+        if silencio >= P.MESES_MIN_SILENCIO_BAJA and silencio > max(huecos, default=0):
+            n_bajas += 1
+
+    pct = lambda k: round(100 * k / n_productos, 1)  # noqa: E731
+    return (
+        {"en_ventana": pct(n_alta_en_ventana), "posterior_al_inicio": pct(n_alta_posterior)},
+        pct(n_bajas),
+    )
+
+
+def _distancia_meses(desde, hasta) -> int:
+    a, b = pd.Timestamp(desde), pd.Timestamp(hasta)
+    return (b.year - a.year) * 12 + (b.month - a.month)
+
+
+def _objetivo_categorias() -> dict[str, float]:
+    total = sum(P.CATEGORIAS_CONTEO.values())
+    return {k: round(100 * v / total, 2) for k, v in P.CATEGORIAS_CONTEO.items()}
+
+
+def _distribucion_categorias(catalogo: pd.DataFrame) -> tuple[dict, dict]:
+    logrado = (catalogo["categoria"].value_counts(normalize=True) * 100).round(2).to_dict()
+    objetivo = _objetivo_categorias()
+    desvios = {
+        categoria: round(logrado.get(categoria, 0.0) - objetivo_pct, 2)
+        for categoria, objetivo_pct in objetivo.items()
+    }
+    return logrado, desvios
 
 
 def escribir_manifiesto(metricas: dict, archivo: Path) -> Path:

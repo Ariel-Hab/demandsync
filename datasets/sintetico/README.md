@@ -41,9 +41,37 @@ elegibles (tamaño de pool correlacionado con el arquetipo) para producir la int
 cliente×producto — ese reparto es *best-effort* contra el objetivo del EDA §5, no forma parte
 del gate.
 
-## Gate de S0
+### Ciclo de vida del producto (T0.4)
 
-`manifiesto.json` → `cuadrantes_intermitencia.gate_ok`: la distribución de cuadrantes lograda
-cae dentro de `TOLERANCIA_CALIBRACION_PUNTOS` (±3 puntos) de los reales. Es lo único que bloquea
-— el resto de las métricas del manifiesto (intermitencia cliente×producto, % sin ancla propia,
-% de notas de crédito) se reportan para transparencia pero no gatean.
+Cada producto tiene un `mes_alta` y un `mes_baja`, y solo vende entre los dos. **Los ceros de
+antes del alta y los de después de la baja no son la misma cosa**: los primeros son meses en
+que el producto no existía y ADR-010 los excluye de la ventana de clasificación; los segundos
+son demanda cero de verdad.
+
+Eso obliga a que el bucle de rechazo clasifique sobre la vida efectiva del producto y no sobre
+`serie[-36:]` — ver `_ventana_de_calibracion` en `demanda.py`, que documenta por qué compartir
+el clasificador con el motor no alcanza si se lo llama con la ventana equivocada.
+
+Las bajas se correlacionan con el arquetipo (`lumpy` muere 4,9× más que `suave`, medido sobre
+datos reales) y **no se suman a `sin_ancla_propia`**: un producto muerto ya no tiene venta
+reciente, así que contarlo dos veces rompería la calibración de EDA §4.
+
+## Gate de S0 y de T0.4
+
+`manifiesto.json` → cinco banderas `gate_ok`:
+
+| bloque | qué exige |
+|---|---|
+| `cuadrantes_intermitencia` | distribución de cuadrantes dentro de ±3 puntos de la real (**gate de S0**) |
+| `cliente_feature_versionada` | más de una `fecha_calculo` — sin esto M2.2 no puede consumirla sin leakage |
+| `meses_degenerados` | existen meses con neto negativo y con neto cero |
+| `altas_y_bajas` | % de altas en la ventana y tasa de baja dentro de ±3 puntos de los objetivos |
+| `categorias` | las 12 reales, con desvío de distribución dentro de ±3 puntos |
+
+El resto de las métricas (intermitencia cliente×producto, % sin ancla propia, % de notas de
+crédito) se reportan para transparencia pero no gatean.
+
+**Los tests viven en `motor/tests/test_generador_sintetico.py`** y verifican las cuatro
+condiciones de T0.4 sobre la salida, no sobre los parámetros. Corren con un dataset chico, así
+que sus tolerancias son más anchas que las del gate: el ±3 a tamaño real lo certifica el
+manifiesto.

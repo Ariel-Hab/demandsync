@@ -21,28 +21,62 @@ def simular_serie_producto(
     sin_ancla_propia: bool,
     n_meses: int = P.N_MESES,
     ventana: int = P.VENTANA_INTERMITENCIA_MESES,
+    mes_alta: int = 0,
+    mes_baja: int | None = None,
 ) -> np.ndarray:
     """Serie de 96 meses cuya ventana de clasificación cae en el cuadrante `arquetipo`
     (rechazo/resorteo hasta MAX_INTENTOS_CALIBRACION_PRODUCTO; si no calibra, se queda
-    con el último intento — el efecto agregado sobre ±3 puntos es despreciable)."""
+    con el último intento — el efecto agregado sobre ±3 puntos es despreciable).
+
+    El producto solo puede vender en `[mes_alta, mes_baja)` (T0.4 #3). Fuera de ahí la
+    serie es cero, pero **son ceros de distinta naturaleza**: los previos al alta son meses
+    en que el producto no existía y ADR-010 los excluye; los posteriores a la baja son
+    demanda cero de verdad.
+    """
     p_min, p_max = P.RANGO_P_OCURRENCIA[arquetipo]
     sigma_min, sigma_max = P.RANGO_SIGMA_TAMANIO[arquetipo]
     estacional = 1 + 0.15 * np.sin(2 * np.pi * (np.arange(n_meses) % 12) / 12)
+
+    fin_vida = n_meses if mes_baja is None else min(int(mes_baja), n_meses)
+    inicio, fin = _ventana_de_calibracion(int(mes_alta), fin_vida, ventana)
 
     serie = None
     for _ in range(P.MAX_INTENTOS_CALIBRACION_PRODUCTO):
         p_occ = rng.uniform(p_min, p_max)
         sigma = rng.uniform(sigma_min, sigma_max)
         ocurre = rng.random(n_meses) < p_occ
-        if sin_ancla_propia:
-            ocurre[-P.MESES_SIN_ANCLA :] = False
+        ocurre[:mes_alta] = False
+        ocurre[fin_vida:] = False
+        if sin_ancla_propia and fin_vida - mes_alta > P.MESES_SIN_ANCLA:
+            ocurre[fin_vida - P.MESES_SIN_ANCLA : fin_vida] = False
         ruido = rng.lognormal(mean=-0.5 * sigma**2, sigma=sigma, size=n_meses)
         serie = np.where(ocurre, tamanio_base * estacional * ruido, 0.0)
 
-        cuadrante, _, _ = clasificar_serie(serie[-ventana:])
+        cuadrante, _, _ = clasificar_serie(serie[inicio:fin])
         if cuadrante == arquetipo:
             return serie
     return serie
+
+
+def _ventana_de_calibracion(mes_alta: int, fin_vida: int, ventana: int) -> tuple[int, int]:
+    """Tramo sobre el que el bucle de rechazo verifica el cuadrante.
+
+    **No es `serie[-ventana:]`, y la diferencia es el bug que este cambio arregla.** El
+    motor clasifica con `clasificar_series`, que aplica la regla de calendario de ADR-010:
+    la ventana de una serie arranca en su primera venta, no 36 meses antes del final. Un
+    producto nacido hace 10 meses medido sobre `serie[-36:]` arrastra 26 ceros que nunca
+    existieron, lo que le infla el ADI y lo calibra como intermitente — mientras el motor,
+    midiéndolo sobre 10 meses, lo vería suave. **El generador y el motor dirían cosas
+    distintas sobre la misma serie**, que es justo lo que el clasificador compartido existe
+    para impedir (ver `clasificacion.py`). Compartir el código no alcanza si se lo llama con
+    la ventana equivocada.
+
+    Por el mismo motivo la ventana termina en la baja y no en el final del calendario: una
+    serie muerta hace 30 meses es todo ceros en los últimos 36 y clasificaría
+    `sin_actividad`, así que el bucle nunca acertaría el arquetipo y quemaría los 40
+    intentos para devolver una serie sin calibrar.
+    """
+    return max(mes_alta, fin_vida - ventana), fin_vida
 
 
 def repartir_entre_clientes(

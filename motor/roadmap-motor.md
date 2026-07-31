@@ -215,7 +215,7 @@ con la lista de columnas si no encuentra candidata.
 El extract corrió y validó: **137.399 filas, 2.189 series, 96 meses sin huecos desde
 2018-07, las 12 categorías, cross-check pandas vs SQL en verde**. El conteo de productos
 activos dio **2.189, el número exacto del EDA** — confirma que los filtros son los
-mismos. Cinco cosas aparecieron en el camino; las dos primeras son del esquema real y
+mismos. Seis cosas aparecieron en el camino; las dos primeras son del esquema real y
 **exceden al motor**.
 
 **1. `producto.id` es `varchar(255)`, no un entero.** Conviven `'2'`, `'02'` y `'0002'`
@@ -250,8 +250,22 @@ dockerizada y llega así al túnel SSH; nativo hay que ir a `127.0.0.1`, donde
 el túnel tiene que estar levantado (`docker compose --profile dev up`).
 
 **5. Confirmada la deuda #2 del generador (T0.4).** Los datos reales traen **281 meses
-con neto negativo**; el sintético tiene cero. Y **4.848 meses de neto exactamente cero**,
-que quedan sin `precio_prom` — el caso que motivó la guarda del infinito.
+con neto negativo** (0,205% de las filas); el sintético tiene cero. Y **4.848 meses de
+neto exactamente cero** (3,53%), que quedan sin `precio_prom` — el caso que motivó la
+guarda del infinito. Los negativos son **devoluciones, no datos corruptos**: 229 productos
+en 88 meses distintos, repartidos parejo en los nueve años (23–51 por año) y de magnitud
+chica (mediana −3 unidades). Salen del neteo por producto-mes de `_SQL_HECHOS`, cuando una
+nota de crédito cae en un mes sin ventas de ese producto que la compensen.
+
+**6. Veintiuna filas con precio implícito negativo.** Unidades y revenue se netean **por
+separado**, así que si la nota de crédito lleva un precio distinto del de la venta (o
+`precio` NULL, que la SQL colapsa a 0 con `COALESCE`), los dos netos pueden terminar con
+signos distintos: **21 filas con `unidades < 0` y `revenue > 0`**, más 1 con revenue
+exactamente 0. El caso inverso (`unidades > 0`, `revenue < 0`) no existe. El panorama
+completo del insumo de M2.1: **132.529 filas con precio implícito > 0, 4.848 NaN por
+`unidades == 0`, 22 con precio ≤ 0**. Son 0,016%, pero **un ancla de precio negativa
+propagada por el fallback categoría → laboratorio contamina bastante más que 22 filas**:
+es un caso concreto para el clamp de ratios de M2.1 y necesita test propio.
 
 **Bonus para T0.4:** ya está medida la distribución real de productos por categoría
 (`CLINICO` 723, `SIN CATEGORIA` 491, `ANTIPARASITARIO EXTERNO` 359, `HIGIENE Y BELLEZA`
@@ -321,8 +335,8 @@ medio de la tabla es dejarlo donde nadie lo mira.
 
 | # | Unidad de trabajo | Semana | Entregable / gate |
 |---|---|---|---|
-| **M2.1** | **Transformador de deflación (ADR-002)**: ancla por producto + índices de nivel (media geométrica ponderada) + fallback categoría → laboratorio → IPC + clamp de ratios. Los casos CP-INF-01..05 se escriben como tests unitarios del transformador | S5 | Componente reutilizable + tests CP-INF-*; el fallback se testea con la misma prioridad que el ancla directa (lo necesita el 25,4% de los productos — EDA §4) |
-| **M2.2** | Features: lags (1,2,3,6,12), rolling means (3,6,12), mes del año, `mismo_mes_año_anterior`, categoría/familia/laboratorio, `CLIENTE_FEATURE`, precio real deflactado y su variación | S5–S6 | Construcción de features pasando el test M1.3. **Precondición: T0.4** — `CLIENTE_FEATURE` del sintético es hoy una foto única, así que no se puede consumir sin leakage ni verificar con la red de M1.3 (§12.1) |
+| **M2.1** | **Transformador de deflación (ADR-002)**: ancla por producto + índices de nivel (media geométrica ponderada) + fallback categoría → laboratorio → IPC + clamp de ratios. Los casos CP-INF-01..05 se escriben como tests unitarios del transformador | S5 | Componente reutilizable + tests CP-INF-*; el fallback se testea con la misma prioridad que el ancla directa (lo necesita el 25,4% de los productos — EDA §4); **test propio del precio implícito no utilizable** — 4.848 filas reales NaN por `unidades == 0` y 22 con precio ≤ 0 por signos cruzados (§5.5 #6) |
+| **M2.2** | Features: lags (1,2,3,6,12), rolling means (3,6,12), mes del año, `mismo_mes_año_anterior`, categoría/familia/laboratorio, `CLIENTE_FEATURE`, precio real deflactado y su variación | S5–S6 | Construcción de features pasando el test M1.3. **Precondición T0.4: cumplida** ✅ 2026-07-31 — `CLIENTE_FEATURE` ya sale con 32 versiones y el arnés la recorta por `fecha_calculo <= corte`; la categoría ya es una de las 12 reales, con `SIN CATEGORIA` al 22% y una categoría de un solo producto para el encoding (§12.1) |
 | **M2.3** | LightGBM global con `mlforecast`, **multi-horizonte directo** (un modelo por h ∈ {1,3,6,12}) | S6–S7 | Corre dentro del arnés, comparable 1:1 con el piso |
 | **M2.4** | Intervalos: quantile regression P10/P50/P90 | S7 | Cobertura empírica de los intervalos reportada (¿el P10–P90 cubre ~80%?) |
 | **M2.5** | **Champion/challenger por serie** + reporte comparativo contra el piso congelado, sobre sintético **y** real | S8 | `motor/backtests/global-vs-baselines-<fecha>.md` |
@@ -372,7 +386,7 @@ medio de la tabla es dejarlo donde nadie lo mira.
 | S3 | M1 | Checkpointing del arnés (precondición de M1.8) | M1.7a | ✅ 2026-07-29 — `ejecutar_backtest(directorio_checkpoint=...)`: un parquet por corte, reanudación que solo predice lo que falta, y **guarda por `id` de corrida** que rechaza reanudar con otra configuración o con otros datos en vez de mezclar checkpoints ajenos. 6 tests |
 | S4 | M1 | Extract del snap (precondición de M1.8) | M1.8a | ✅ 2026-07-31 — `motor/scripts/extraer_snap.py` **ejecutado**: 137.399 filas, 2.189 series, 96 meses sin huecos, 12 categorías, cross-check en verde y **2.189 productos activos, el número exacto del EDA**. SQL derivada de la que cotizaciones ya corre en producción con tres diferencias deliberadas (§5.4). Cinco hallazgos en §5.5, dos de ellos del esquema real que **también afectan al ETL de R1** (`producto.id` es varchar con colisiones; `nota_credito` es BIT) → pendiente del Analista en `planning/roadmap.md`. **32 tests**; los tres de regresión verificados fallando sin su arreglo |
 | S4 | M1 | **Piso real congelado** (máquina autorizada) | M1.8 | ✅ 2026-07-31 — `backtests/baselines-real-2026-07-31.md`, corrida `f7af767ca7e6`: 2.189 productos × 18 cortes × h=12 en 214 min con `n_jobs=4`. **Gate de M1 cumplido.** WAPE 0,32/0,15/0,12 (producto/categoría/total, h=1) y **sesgo total −1,4%, que ya cumple el ±5% de M2** — el −10% del sintético era un artefacto del generador. Cobertura < 1 explicada y diagnosticada al 100%: altas de catálogo (§5.6) |
-| S4–S5 | — | Deuda del generador (precondición de M2.2, no bloquea M1) | T0.4 | ⬜ ver §12.1 |
+| S4–S5 | — | Deuda del generador (precondición de M2.2, no bloquea M1) | T0.4 | ✅ 2026-07-31 (23 tests) |
 | S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | ⬜ |
 | S7 | M2 | LightGBM global · cuantiles | M2.3–M2.4 | ⬜ |
 | S8 | M2 | **Champion/challenger vs piso** | M2.5 | ⬜ |
@@ -417,18 +431,115 @@ clon nuevo hasta regenerarlo.
 
 ### 12.1 Deuda del generador sintético → **T0.4**
 
-Las tres se verificaron corriendo contra el dataset generado (semilla 42). Ninguna bloquea
-M1, pero **la primera bloquea M2.2** y la tercera debilita lo que el dataset puede validar.
+> **✅ CERRADA 2026-07-31.** Las cuatro deudas están corregidas y bajo test; el detalle del
+> cierre y los números logrados están al final de la sección. Lo que sigue abajo se conserva
+> como el diagnóstico original —qué estaba mal y por qué importaba— porque es lo que explica
+> las decisiones de calibración que quedaron en `parametros.py`.
+
+Las cuatro se verificaron corriendo contra el dataset generado (semilla 42). Ninguna
+bloquea M1, pero **la primera y la cuarta bloquean M2.2** (ambas son features de M2.2) y la
+tercera debilita lo que el dataset puede validar.
+
+**Cambio de alcance (2026-07-31):** la deuda #4 estaba anotada como "bonus" en §5.5 y se
+incorpora acá como cuarto ítem, con su condición de gate. Motivo: la categoría deja de ser
+solo una columna de desagregación del reporte y **pasa a ser feature de entrenamiento en
+M2.2**, así que su distribución importa igual que las otras tres.
 
 | # | Qué le falta al generador | Por qué importa |
 |---|---|---|
 | 1 | **`cliente_feature` es una foto única** — verificado: una sola `fecha_calculo` (2026-06) para las 1.600 filas | **M2.2 la usa como feature.** Un predictor que la consuma en un corte de 2024 estaría viendo el futuro. El arnés ya tiene el hook (`tablas_auxiliares`) pero no hay nada que recortar: el generador tiene que emitir una versión por mes. Hoy la única defensa es que ningún predictor la usa todavía |
 | 2 | **Ningún mes con unidades netas negativas** — verificado: 0 filas con `unidades < 0` en las dos tablas de hechos | El ~9,5% de notas de crédito existe solo en el JSON del contrato; al agregar por mes el neto siempre queda positivo. En la realidad un mes puede cerrar negativo (más devoluciones que ventas), y ni el motor ni el ETL de R1 lo ejercitan nunca |
-| 3 | **No modela altas de producto** — verificado: **0 de 2.300 productos** tienen su primera venta dentro de la ventana de clasificación de 36 meses; la última primera-venta del dataset es de 2020 | La regla de calendario de **ADR-010** (arrancar en la primera venta de la serie) **no la ejercita ningún dato a escala**, solo tests unitarios. En datos reales los productos nuevos existen y son los de mayor incertidumbre. Un ADR-010 mal implementado pasaría toda validación sintética — de hecho pasó: el bug de la clave de `groupby` de M1.4 no lo detectó el sintético |
+| 3 | **No modela altas ni bajas de producto** — verificado: **0 de 2.300 productos** tienen su primera venta dentro de la ventana de clasificación de 36 meses; la última primera-venta del dataset es de 2020 | La regla de calendario de **ADR-010** (arrancar en la primera venta de la serie) **no la ejercita ningún dato a escala**, solo tests unitarios. En datos reales los productos nuevos existen y son los de mayor incertidumbre. Un ADR-010 mal implementado pasaría toda validación sintética — de hecho pasó: el bug de la clave de `groupby` de M1.4 no lo detectó el sintético. **M1.8 lo ascendió de teórico a urgente**: el 100% de la cobertura faltante del piso real son altas de catálogo (§5.6) |
+| 4 | **Las 8 categorías no existen** — `parametros.py:63` inventa `antiparasitarios`, `vacunas`, … y `catalogo.py:15` las reparte **uniforme** | Hasta M1 daba igual (la categoría sale del extract y solo desagrega el reporte). **En M2.2 pasa a ser feature.** Las 12 reales tienen distribución brutalmente despareja (`CLINICO` 723 contra `ACCESORIO` 19) e incluyen un bucket **`SIN CATEGORIA` del 22,4%** que no es un error de datos sino una realidad del catálogo: un quinto de los productos no tiene etiqueta, y el sintético le da categoría al 100%. Un `rng.choice` uniforme tampoco puede producir una categoría con **un solo producto** |
+
+**Objetivos de calibración, medidos sobre el extract real (2026-07-31)** — sin esto el
+generador inventaría proporciones, que es exactamente el error de la deuda #4:
+
+| magnitud | real | sintético hoy |
+|---|---|---|
+| productos con primera venta posterior al mes 1 | 51,9% | 0% |
+| alta dentro de la ventana de 36m | **20,0%** | 0% |
+| **baja** (silencio > 24m que además supera el hueco más largo del propio producto) | **5,8%** | 0% |
+| sin venta en los últimos 3m | 25,2% | 25,4% (forzado) |
+| vida < 36 meses | 22,0% | 0% |
+
+Dos cosas que la medición desarmó. **Una: el "13,8% sin venta hace más de 12 meses" no son
+bajas** — con 42% de series intermitentes, un hueco de 12 meses es comportamiento normal. Por
+eso el criterio exige que el silencio supere el hueco histórico del propio producto, y ahí la
+tasa cae a 5,8%. **Dos: `sin_ancla_propia` ya reproduce el 25,4% agregado pero por el
+mecanismo equivocado** — apaga exactamente los últimos 3 meses de todos, cuando en la realidad
+ese 25% es una mezcla (5,8% muerto, más silencio reciente). Las bajas **no se suman** a
+`sin_ancla_propia`: lo reemplazan parcialmente, o el 25% se vuelve 31% y se rompe EDA §4.
+
+**Las bajas se correlacionan con el arquetipo** (medido, criterio estricto): `lumpy` 16,1% ·
+`intermitente` 11,7% · `erratica` 5,5% · `suave` 3,3% — **lumpy muere 4,9× más que suave**. Se
+preservan esos ratios y se escala el nivel al objetivo. Verificado que el gate de S0 aguanta:
+con muerte diferencial la mezcla de supervivientes queda 49,3 / 30,0 / 10,3 / 10,5 contra el
+objetivo 47,8 / 30,9 / 10,1 / 11,1 — **desvío máximo 1,5 puntos, dentro del ±3**.
+
+**Trampa al implementar las altas:** el bucle de rechazo de `demanda.py:42` clasifica sobre
+`serie[-36:]` crudo, sin la regla de ADR-010 que sí aplica `clasificar_series`. Con un producto
+nacido hace 10 meses eso mete 26 ceros que nunca existieron, infla el ADI y lo calibra como
+intermitente mientras el motor lo clasificaría distinto. **Compartir el clasificador no alcanza
+si se lo llama con la ventana equivocada** — hay que recortar a `[mes_alta, mes_baja]`.
 
 | # | Unidad de trabajo | Semana | Entregable / gate |
 |---|---|---|---|
-| **T0.4** | **Deuda del generador**: `cliente_feature` versionada por mes; altas y bajas de producto a mitad de historia; meses de neto negativo | S4–S5 (antes de M2.2) | Manifiesto que reporte: nº de `fecha_calculo` distintas > 1, % de productos con alta dentro de la ventana > 0, y nº de meses con neto negativo > 0. **No bloquea M1**; sí es precondición de M2.2 |
+| **T0.4** | **Deuda del generador**, cuatro ítems: (1) `cliente_feature` versionada; (2) meses de neto negativo; (3) altas y bajas de producto a mitad de historia; (4) las 12 categorías reales con sus proporciones | S4–S5 (antes de M2.2) | Manifiesto que reporte las cuatro condiciones: nº de `fecha_calculo` distintas > 1; nº de meses con neto negativo > 0; % de productos con alta dentro de la ventana ≈ 20% y tasa de baja ≈ objetivo; desvío de la distribución de categorías dentro de tolerancia. **Más `motor/tests/test_generador_sintetico.py`**: hoy el generador no tiene ni un test, así que las cuatro condiciones tienen que quedar como aserciones ejecutables o T0.4 no tiene evidencia. **No bloquea M1**; sí es precondición de M2.2 |
+
+#### T0.4 cerrado (2026-07-31)
+
+Cinco banderas `gate_ok` en verde en `datasets/sintetico/manifiesto.json` (semilla 42, 2.300
+productos, 36 s) y **23 tests** en `motor/tests/test_generador_sintetico.py`, que era el primer
+test que el generador tiene en su vida.
+
+| magnitud | objetivo | logrado | real |
+|---|---|---|---|
+| versiones de `cliente_feature` | > 1 | **32** | — |
+| meses con neto negativo | > 0 | 257 (0,225%) | 281 (0,205%) |
+| meses con neto cero | > 0 | 4.014 (3,521%) | 4.848 (3,528%) |
+| precio implícito negativo | — | 25 | 22 |
+| altas dentro de la ventana | 20,0% | **20,8%** | 20,0% |
+| tasa de baja (criterio estricto) | 5,0% | **5,4%** | 5,8% |
+| categorías presentes | 12 | **12** | 12 |
+| desvío máximo de categorías | ±3 pts | 1,19 | — |
+| desvío máximo de cuadrantes | ±3 pts | 1,21 | — |
+
+**Los tests se verificaron por mutación**, no solo por estar en verde: rompiendo a propósito
+las cuatro correcciones caen 7 tests. La trampa que más importaba —emitir 32 versiones de
+`cliente_feature` calculadas todas sobre la historia completa y solo re-etiquetarlas, que deja
+el leakage intacto y encima invisible— la cazan dos, uno de ellos por un invariante barato: una
+`recency_dias` negativa significa que la versión vio una compra posterior a su propia fecha.
+
+**Un test se borró por no pasar la mutación.** Verificaba que un cliente no apareciera en
+versiones anteriores a su primera compra, y seguía verde con el bug puesto: el generador **no
+modela altas de cliente**, los 1.600 existen desde el mes 1, así que la aserción no se puede
+violar. Queda anotado abajo como deuda; el test vuelve el día que haya altas de cliente.
+
+**Tres efectos medidos que conviene tener a mano:**
+
+1. **`intermitente` se corrió de −1,25 a +1,21 puntos.** Los productos nuevos se clasifican
+   sobre ventanas cortas y una ventana de 6 meses con dos ventas da ADI 3, o sea intermitente.
+   Es realista —los productos nuevos reales también parecen intermitentes al principio— pero el
+   objetivo del EDA ya se midió sobre datos que los incluían, así que el exceso sugiere que los
+   nuevos del sintético parecen **más** intermitentes que los reales. Dentro del gate, anotado
+   por si M2 encuentra algo raro en ese cuadrante.
+2. **`sin_ancla_propia` sigue sobrando ~4 puntos** (29,5% contra el objetivo 25,4%). **Es
+   preexistente, no lo introdujo T0.4**: el manifiesto anterior daba 30,0%. Sale de que los
+   productos intermitentes se saltean los últimos 3 meses por azar, encima del forzado.
+3. **Asignar 6,4% de bajas produce 5,4% medidas.** No es error de calibración: el criterio
+   estricto no cuenta como baja a un producto cuyo silencio final no supera su propio hueco
+   histórico, y un `lumpy` que ya tenía huecos de 30 meses puede morir sin ser reconocible. La
+   misma brecha existe en los datos reales.
+
+**Deuda nueva que abrió T0.4** (ninguna bloquea M2):
+
+- **No hay altas ni bajas de cliente.** Los 1.600 existen desde el mes 1 y ninguno se va. Es el
+  análogo de la deuda #3 a nivel cliente, y pega en **M3.2** (P(compra en h) por cliente×producto),
+  no en M2.
+- **`datasets/` está fuera del gate de lint.** `ruff check` corre sobre `motor/`; el generador
+  tiene 7 líneas largas preexistentes que nadie ve. Es una línea de config, pero es decisión de
+  equipo si se amplía el gate.
 
 ### 12.2 Trampas de configuración
 
