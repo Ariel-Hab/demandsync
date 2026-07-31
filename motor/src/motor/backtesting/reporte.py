@@ -160,6 +160,7 @@ def a_markdown(tablas: dict[str, pd.DataFrame], titulo: str, notas: str = "") ->
 
     orden = [
         ("corrida", "Corrida"),
+        ("ganadores_por_cuadrante", "Modelo ganador por cuadrante (selección por serie, M1.7)"),
         ("por_nivel_y_horizonte", "Por nivel de agregación y horizonte"),
         ("por_horizonte", "Por horizonte (grano producto)"),
         ("por_categoria", "Por categoría y horizonte"),
@@ -169,4 +170,12 @@ def a_markdown(tablas: dict[str, pd.DataFrame], titulo: str, notas: str = "") ->
     for clave, encabezado in orden:
         if clave in tablas:
             partes += [f"## {encabezado}", "", _tabla_markdown(tablas[clave]), ""]
+
+    # Una tabla con clave desconocida se renderiza igual al final, en vez de
+    # desaparecer: quien la agregó al dict la quiere en el archivo, y una tabla que se
+    # descarta en silencio es justo el tipo de "salió bien" engañoso contra el que este
+    # módulo existe. Para darle título y posición propios, agregala a `orden`.
+    for clave in tablas:
+        if clave not in {c for c, _ in orden}:
+            partes += [f"## {clave}", "", _tabla_markdown(tablas[clave]), ""]
     return "\n".join(partes)

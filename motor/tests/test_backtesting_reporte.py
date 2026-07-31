@@ -200,6 +200,33 @@ def test_el_markdown_lleva_la_corrida_y_las_tablas(datos):
     assert "sin identificador de corrida" not in md
 
 
+def test_la_tabla_de_ganadores_de_m1_7_va_con_su_titulo(datos):
+    """`ganadores_por_cuadrante` la produce `motor.modelado.seleccion` (M1.7) y se pasa
+    aparte; tiene que salir con su encabezado propio y en su posición del orden."""
+    tablas = construir_reporte(_correr(datos), columna_pred="pred")
+    tablas["ganadores_por_cuadrante"] = pd.DataFrame(
+        {"modelo_ganador": ["AutoETS"], "suave": [3], "total": [3]}
+    )
+
+    md = a_markdown(tablas, titulo="Piso")
+
+    assert "## Modelo ganador por cuadrante (selección por serie, M1.7)" in md
+    assert "AutoETS" in md
+
+
+def test_una_tabla_con_clave_desconocida_se_renderiza_igual(datos):
+    """Antes el bucle recorría una lista fija de claves y descartaba en silencio
+    cualquier otra: quien agregara una tabla al dict no la veía en el archivo y no se
+    enteraba. Ahora sale al final, sin título lindo pero presente."""
+    tablas = construir_reporte(_correr(datos), columna_pred="pred")
+    tablas["una_tabla_nueva"] = pd.DataFrame({"columna_inventada": [42]})
+
+    md = a_markdown(tablas, titulo="Piso")
+
+    assert "## una_tabla_nueva" in md
+    assert "columna_inventada" in md
+
+
 def test_mase_entra_al_reporte_solo_si_se_pasa_la_historia(datos):
     reporte = _correr(datos)
 
