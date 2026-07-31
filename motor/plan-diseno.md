@@ -38,14 +38,15 @@
 ### M1 — Baselines y arnés de evaluación (primer código del motor, sobre dataset sintético + validación real)
 - Implementar el **arnés de backtesting** (ver abajo) ANTES que cualquier modelo. El arnés es el activo más importante del motor.
 - Baselines con `statsforecast`: `SeasonalNaive`, media móvil, `AutoETS`, `AutoTheta`, `AutoARIMA`; para series intermitentes: `CrostonSBA`, `TSB`.
-- Selección por serie: cada producto queda con su mejor baseline según MASE en backtest.
+- Selección por serie: cada producto queda con su mejor baseline según MASE en backtest. Los candidatos compiten **libres en toda serie**: el cuadrante de intermitencia desagrega el reporte pero no filtra qué modelos se prueban (decide el MASE medido, no una regla fija).
+  - ⚠️ **Esta selección es retrospectiva y por lo tanto el piso que produce es optimista** — el ganador de cada serie se elige con el MASE de todos los cortes y se aplica también a los más viejos. Es la convención para fijar una referencia fuerte, pero desnivela la comparación del champion/challenger de M2 (ver abajo) contra un global medido prospectivamente. Cómo nivelarlo es decisión pendiente: `roadmap-motor.md` §12.5.
 - **Entregable:** tabla WAPE/MASE/sesgo por nivel (total/categoría/producto) y horizonte (1/3/6/12). **Este es el piso a batir; se congela como referencia.**
 
 ### M2 — Deflación + modelo global ML
 - Implementar ancla + índices de nivel + fallback + clamp (ADR-002) como transformador reutilizable, con el cuidado de leakage descrito abajo.
 - `mlforecast` + LightGBM global: lags (1,2,3,6,12), rolling means (3,6,12), mes del año, `mismo_mes_año_anterior`, categoría/laboratorio, features de cliente (`CLIENTE_FEATURE`), precio real deflactado y su variación.
 - Quantile regression (P10/P50/P90) para intervalos.
-- **Criterio de promoción:** el global ML reemplaza al baseline **solo en las series/niveles donde le gana en backtest** (champion/challenger por serie).
+- **Criterio de promoción:** el global ML reemplaza al baseline **solo en las series/niveles donde le gana en backtest** (champion/challenger por serie). Antes de aplicarlo hay que resolver que las dos partes se midan igual: el piso de M1 tiene selección retrospectiva (ver M1 arriba y `roadmap-motor.md` §12.5), así que comparado contra un global prospectivo la cancha está inclinada en contra del global.
 
 ### M3 — Jerarquía, cliente y segmentos
 - Reconciliación total→categoría→laboratorio→producto (`hierarchicalforecast`, MinT/bottom-up según backtest).

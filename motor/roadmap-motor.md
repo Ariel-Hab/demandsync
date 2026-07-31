@@ -76,9 +76,11 @@ Objetivo: que en S1 pueda escribir el arnés sin depender de nadie.
 | **M1.2** | Métricas ADR-008 con `utilsforecast`: WAPE por nivel, MASE vs `SeasonalNaive` por serie, sesgo (%over/under). Cortes de reporte por horizonte (1/3/6/12), **por cuadrante de intermitencia** y por categoría | S1 | Reporte tabular; ningún número global suelto sin desagregar. **✅ 2026-07-27** — `backtesting/metricas.py` + `backtesting/reporte.py`: WAPE/sesgo por nivel de agregación (producto/categoría/total) y MASE por serie, con `n` y `cobertura` en toda salida; cortes por horizonte (1/3/6/12), categoría y **cuadrante de intermitencia** (vía `motor.clasificacion`, M1.4). El corte por cuadrante es el que más aporta: mismo predictor, WAPE h=1 de **0,51 en suaves a 1,63 en lumpy** — el número global de 0,80 escondía 3x |
 | **M1.3** | **Test anti-leakage de deflación**: verifica que para el corte t, ancla e índices se computan solo con datos ≤ t. Se escribe como test que *falla* si se introduce el leakage | S2 | Test en `tests/` marcado como innegociable; es la red contra el error más letal del motor (viabilidad §5). **✅ 2026-07-27** — `backtesting/leakage.py` + `tests/test_leakage_deflacion.py`, corribles con `pytest -m innegociable`. Como M2.1 no existe todavía, **no verifica una implementación sino una propiedad**: si dos datasets coinciden hasta el corte, el resultado en ese corte tiene que ser idéntico. Prueba dos variantes (truncar el futuro → detecta uso de su *existencia*; perturbar sus valores → detecta que se *leyeron*) y reporta cuál falló como diagnóstico. Se valida contra **tres implementaciones deliberadamente contaminadas**, entre ellas el fallback con promedio global — el camino del 25,4% de productos sin ancla propia (EDA §4) |
 | **M1.4** | Clasificador ADI/CV² por serie (Syntetos-Boylan) para enrutar método por cuadrante | S2 | Etiqueta por serie, reproducible; contrastada contra los % del EDA. **✅ 2026-07-27** — `motor/src/motor/clasificacion.py`, con la **dependencia invertida corregida**: vivía en `datasets/sintetico/` y el motor no podía importarlo (`ModuleNotFoundError`, `datasets/` no es paquete instalable); ahora el generador importa del motor, así el gate de calibración se mide con el mismo criterio que usa el motor. Refactor verificado equivalente a escala real (0 de 2.300 productos cambian de cuadrante) y `datasets/sintetico/manifiesto.json` **idéntico byte a byte**, así que el gate de S0 no se movió. Aplica la regla de calendario de ADR-010 (ventana desde la primera venta histórica de cada serie) y pasa la red anti-leakage de M1.3 con `hasta=corte` |
-| **M1.5** | Baselines `statsforecast`: `SeasonalNaive`, media móvil, `AutoETS`, `AutoTheta`, `AutoARIMA` | S2–S3 | Corren sobre sintético dentro del arnés |
-| **M1.6** | Rama intermitente: `CrostonSBA`, `TSB` (~42% de las series lo requiere — EDA §3) | S3 | Idem, con métricas separadas por cuadrante |
-| **M1.7** | Selección **por serie** (mejor baseline por MASE) + **tabla de referencia congelada** sobre sintético | S3 | `motor/backtests/baselines-sintetico-<fecha>.md` |
+| **M1.5** | Baselines `statsforecast`: `SeasonalNaive`, media móvil, `AutoETS`, `AutoTheta`, `AutoARIMA` | S2–S3 | Corren sobre sintético dentro del arnés. **✅ 2026-07-29** — `motor/src/motor/modelado/baselines.py`, predictor conforme al contrato `PredictorFn`. Tres gotchas de integración con `statsforecast==1.7.8` encontradas contra el dataset real y resueltas: (1) columnas además de id/fecha/objetivo se interpretan como regresores exógenos obligatorios — se recorta antes de llamar; (2) el id vuelve como índice, no columna — `reset_index()`; (3) `AutoETS`/`AutoTheta` explotan (`IndexError`/`ZeroDivisionError`) con 1-3 meses de historia, el caso real de un producto recién entrado al catálogo en un corte temprano — resuelto con `fallback_model=SeasonalNaive(season_length=1)`, verificado que no rompe la corrida completa. Riesgo medido, no resuelto acá: `AutoARIMA` cuesta ~2,9s/producto y `AutoTheta` ~1,6s/producto en serie — a escala real (2.300 × 18 cortes) es inviable sin paralelizar (`n_jobs`), preocupación de M1.7/M1.8. 4 tests, `ruff` limpio |
+| **M1.6** | Rama intermitente: `CrostonSBA`, `TSB` (~42% de las series lo requiere — EDA §3) | S3 | Idem, con métricas separadas por cuadrante. **✅ 2026-07-29** — `motor/src/motor/modelado/intermitentes.py`, mismo contrato y mismas gotchas de columnas/índice que M1.5. Verificado además: predicciones nunca negativas, planas en el horizonte (comportamiento esperado del método, no bug), una serie sin ninguna venta no rompe la corrida, y el reporte se desagrega por cuadrante de punta a punta (`etiquetar` + `construir_reporte`) sobre una muestra real de las cuatro categorías — con este predictor sin enrutar, WAPE h=1 va de 0,14 en suave a 4,53 en lumpy, la brecha que motiva la selección de M1.7. 4 tests, `ruff` limpio |
+| **M1.7** | Selección **por serie** (mejor baseline por MASE) + **tabla de referencia congelada** sobre sintético | S3 | **✅ 2026-07-30** — `modelado/seleccion.py` + `scripts/congelar_baselines_sintetico.py`; tabla en [`backtests/baselines-sintetico-2026-07-30.md`](backtests/baselines-sintetico-2026-07-30.md) (corrida `f993bc6ae12e`, muestra estratificada de 400 productos según §5.2, cobertura 1,0). **Los 7 candidatos ganan alguna serie** — ver el hallazgo de §5.3 |
+| **M1.7a** | **Checkpointing del arnés por corte** (precondición de M1.8) | S3 | `ejecutar_backtest(directorio_checkpoint=...)`: cada corte se persiste al terminar y una corrida interrumpida se reanuda. Con guarda de `id` de corrida para no mezclar checkpoints de configuraciones distintas |
+| **M1.8a** | **Extract propio del snap** (precondición de M1.8, no estaba planificada — ver §5.4) | S4 | `motor/scripts/extraer_snap.py`: los dos parquets del diccionario desde MySQL, con cross-check pandas vs SQL y validación contra el EDA. **La salida son datos reales: nunca al repo.** 21 tests sobre la transformación |
 | **M1.8** | **Corrida de validación real** en la máquina autorizada: extract propio desde el snap 2018→, mismo arnés, misma tabla | S4 | `motor/backtests/baselines-real-<fecha>.md` — **solo métricas agregadas**. Este es el piso a batir; se congela |
 
 ### 5.1 Relevamiento del 2026-07-27 — M1.1/M1.2 vuelven a 🟡 y se agrega M1.0
@@ -90,6 +92,224 @@ Objetivo: que en S1 pueda escribir el arnés sin depender de nadie.
 | # | Unidad de trabajo | Semana | Entregable / gate |
 |---|---|---|---|
 | **M1.0** | **Remediación del arnés y las métricas.** ✅ (a) densificación de calendario → **ADR-010** + `backtesting/panel.py`; ✅ (b) escala de MASE sobre calendario denso, `train_df` ordenado y guarda de escala 0; ✅ (c) WAPE/sesgo por **nivel de agregación** (`columnas_nivel`: producto/categoría/total); ✅ (d) `n` y `cobertura` en toda salida de métrica + el arnés conserva las celdas no predichas; ✅ (e) validación de grano/unicidad y de nulos en columnas de agrupación; ✅ (f) `generar_cortes` sobre calendario; ✅ (h) `tablas_auxiliares` recortadas al corte; ✅ (g) identificador de corrida (`corrida.py`) + reporte tabular (`reporte.py`) + `motor/backtests/` con sus reglas | S1–S2 | **✅ CERRADO 2026-07-27.** Tests escritos primero, verificados con `--runxfail` para que fallaran por el defecto y no por un error de la prueba; los 9 defectos cerrados con su test de regresión. **51 tests verdes, ningún `xfail`, `ruff` limpio**, y validación a escala real: 345.000 filas comparables, niveles producto/categoría/total 0,804/0,136/0,081 a h=1, cobertura 1,0 vs 0,391 al omitir series, el fan-out de cliente×producto se rechaza, y el reporte markdown se genera con su `id` de corrida. Ver `backtesting/README.md` §Defectos |
+
+### 5.2 Cambio de plan del 2026-07-29 — la tabla de M1.7 va sobre muestra estratificada, y se agrega M1.7a
+
+**Motivo (CLAUDE.md §6.4).** Al implementar M1.7 se midió por primera vez el costo real de
+correr los 7 candidatos dentro del arnés, y obliga a decidir dos cosas que el plan no
+contemplaba.
+
+**Costo medido** (detalle y tabla completa en `src/motor/modelado/README.md` §Costo y
+paralelismo). Ajustando `tiempo_por_corte = A + B × n_productos` sobre dos corridas con
+`n_jobs=8`: **A ≈ 105 s/corte** de overhead fijo y **B ≈ 0,58 s/producto/corte** de
+cómputo. El catálogo sintético completo (2.300 × 18 cortes) son **≈7 h**, y en serie ≈69 h.
+Además `n_jobs=14` **mata la corrida** por archivo de paginación chico, y con `n_jobs=8`
+ya aparecen `MemoryError` de workers reemplazados: el paralelismo está al límite de la
+máquina.
+
+**Decisión 1 — la tabla de M1.7 se genera sobre una muestra estratificada por cuadrante,
+no sobre el catálogo completo.** Motivo: §3 de este roadmap ya establece que el sintético
+**no valida calidad predictiva** (reproduce propiedades, no la señal), así que las 7 h de
+cómputo no compran evidencia de calidad — compran la verificación de que el pipeline de
+selección corre reproducible de punta a punta, y eso lo da igual una muestra. Estratificar
+por cuadrante además da **mejores** estadísticas por cuadrante que la distribución natural,
+donde `lumpy` es solo el 11%. El presupuesto de cómputo se reserva para M1.8, que es la
+corrida cuyos números significan algo.
+
+**Consecuencia sobre el gate, declarada y no escondida:** la tabla de M1.7 queda
+etiquetada como muestra estratificada y **no** como piso del catálogo completo. El gate de
+M1 no cambia — sigue exigiendo una tabla **sobre datos reales** (M1.8), que es la que se
+congela como piso a batir. Lo que M1.7 acredita es el pipeline, no el piso.
+
+**Decisión 2 — se agrega M1.7a (checkpointing del arnés).** Una corrida de horas sin
+posibilidad de reanudar, con el pool de procesos al límite de memoria, es una apuesta: si
+muere en la hora 6 no queda nada. M1.8 corre a escala real en la máquina autorizada y va a
+tener el mismo problema o peor, así que el checkpointing se construye ahora y se usa en
+las dos. Es un parámetro opcional del arnés (`directorio_checkpoint`), no un cambio de su
+comportamiento por defecto.
+
+### 5.3 Resultado de M1.7 — qué mostró la tabla (2026-07-30)
+
+Corrida `f993bc6ae12e`: 400 productos (100 por cuadrante), 18 cortes, horizonte 12,
+cobertura 1,0 en toda la tabla. Tres lecturas que importan para lo que viene.
+
+**1. Los 7 candidatos ganan alguna serie — seleccionar por serie estaba justificado.**
+
+| modelo | erratica | intermitente | lumpy | suave | total |
+|---|---|---|---|---|---|
+| `AutoARIMA` | 26 | 35 | 50 | 16 | **127** |
+| `AutoETS` | 31 | 17 | 8 | 45 | **101** |
+| `SeasonalNaive` | 14 | 21 | 19 | 3 | **57** |
+| `CrostonSBA` | 15 | 6 | 5 | 24 | **50** |
+| `AutoTheta` | 6 | 8 | 6 | 6 | **26** |
+| `WindowAverage` | 4 | 10 | 10 | 2 | **26** |
+| `TSB` | 4 | 3 | 2 | 4 | **13** |
+
+Ninguno domina: el más ganador se lleva el 32% de las series. Correr un solo modelo para
+todo el catálogo habría sido peor para las otras dos terceras partes.
+
+**2. Hallazgo que contradice la premisa de enrutamiento de M1.6.** `CrostonSBA` gana casi
+**5x más en `suave` (24) que en `lumpy` (5)**, y en `lumpy` —el cuadrante que motivó la
+rama intermitente— gana `AutoARIMA` la mitad de las veces. Es lo contrario de lo que
+sugiere la teoría. Explicación plausible: Croston predice un valor **plano** (una tasa de
+largo plazo), y contra una serie suave y estable eso es un buen predictor; en `lumpy` la
+varianza es tan alta que ningún método anda bien y las diferencias de MASE son ruido.
+
+**Consecuencia de diseño, ya aplicada:** la decisión de M1.7 de hacer competir a los 7
+candidatos **libres en toda serie**, en vez de enrutar por cuadrante, queda validada por
+el dato. La regla "obvia" (intermitentes → Croston/TSB, resto → los normales) habría
+perdido las 24 series suaves donde Croston es el mejor y habría forzado Croston en 100
+series lumpy donde pierde. **No enrutar por cuadrante en M2/M3 sin volver a medir esto.**
+
+**3. Dos números para tener presentes en M2:**
+- **El sesgo a nivel total es ≈ −10%** (−0,1049 a h=1), o sea que los baselines
+  **sub-pronostican** de forma sistemática. El gate de M2 exige ±5% a nivel total, así que
+  esto no lo cumple — es una vara que el modelo global tiene que mejorar, no igualar.
+- **El efecto de nivel es de ~5x**, más fuerte que el 3-4x medido en M1.2: WAPE 0,81 a
+  grano producto contra 0,24 en categoría y 0,16 en total (h=1). Refuerza que un WAPE sin
+  nivel declarado no significa nada.
+
+### 5.4 Preparación de M1.8 — el extract y las decisiones de universo (2026-07-30)
+
+M1.8 se venía describiendo como "el mismo script cambiando `--hechos` y `--etiqueta`".
+Eso es cierto para el backtest, pero **el extract que produce esos `--hechos` no existía**:
+en disco solo estaba el sintético, y el EDA de M0 fueron consultas SQL ad-hoc que no
+quedaron guardadas. El entregable de software que faltaba es
+`motor/scripts/extraer_snap.py`.
+
+**La SQL se reusa, no se reconstruye.** `cotizaciones/backend/src/modules/snap/ventas/
+repository.py::obtener_ventas_por_periodo` ya hace esta agregación mensual en producción
+contra la misma base, con los filtros que el EDA documentó (`producto_id` numérico,
+`estadistica NOT IN ('P','N')`, `precio > 0`, NC con signo, unión factura+remito). Se
+parte de ahí en vez de reescribirla desde el markdown del EDA. **Tres diferencias
+deliberadas**, todas anotadas en el script y en `scripts/README.md`: se agrupa por
+producto y no por cliente × producto (sumar su salida perdería revenue por su `HAVING`),
+se conservan los meses de neto cero (ADR-010) y el revenue mantiene el signo (ADR-002).
+
+Acoplamiento aceptado y declarado: un cambio de esquema del ERP rompe dos repos. Es
+tolerable porque este extract es **ad-hoc y no el ETL de R1** (§3); la divergencia entre
+ambas definiciones de "venta mensual" ya está en la tabla de riesgos y se paga en M4.2.
+
+**Decisiones de universo tomadas con el ML Specialist:**
+
+| Decisión | Valor | Motivo |
+|---|---|---|
+| Productos | con venta en los **últimos 36 meses** (~2.189) | El catálogo tiene ~10.500 entradas; las ~8.000 sin venta cuadruplican el cómputo y meten series todo-ceros que **bajan el WAPE del piso sin que nadie prediga mejor** |
+| Categorías | **las 12 de `categoria_producto`**, incluidas `DESCARTABLES`, `ACCESORIO` y `SIN CATEGORIA` | Son productos que el cliente efectivamente vende. La segunda columna del listado del ERP es un `version` de fila, no un flag de negocio: no hay señal ahí para excluir nada |
+| Ventana | 2018-07 → último mes **completo** | El mes en curso está contablemente abierto; su caída se leería como demanda real |
+| Máquina | la autorizada (única con acceso a la réplica) | Se descartó correrlo en otra máquina. Vale entonces el `n_jobs=4` ya medido acá |
+
+**Dos redes contra un extract silenciosamente mal.** Un extract equivocado no falla:
+produce un piso equivocado. (1) Cross-check pandas vs SQL sobre un mes, activo por
+defecto: netea los renglones crudos con la regla que sí está bajo test y compara contra
+lo que devolvió el servidor. (2) Validación contra el EDA — primer mes, meses sin huecos,
+las 12 categorías, ~2.189 productos ±10%. Lo estructural corta la corrida.
+
+**Queda por resolver en la corrida, no antes:** el nombre de la FK `producto` →
+`categoria_producto`. Cotizaciones nunca joinea esas dos tablas desde el snap (categoriza
+con su propio Postgres), así que el script lo descubre contra `information_schema` y corta
+con la lista de columnas si no encuentra candidata.
+
+### 5.5 Lo que apareció al correr el extract (2026-07-31)
+
+El extract corrió y validó: **137.399 filas, 2.189 series, 96 meses sin huecos desde
+2018-07, las 12 categorías, cross-check pandas vs SQL en verde**. El conteo de productos
+activos dio **2.189, el número exacto del EDA** — confirma que los filtros son los
+mismos. Cinco cosas aparecieron en el camino; las dos primeras son del esquema real y
+**exceden al motor**.
+
+**1. `producto.id` es `varchar(255)`, no un entero.** Conviven `'2'`, `'02'` y `'0002'`
+como productos **distintos** —con proveedor y estado distintos— que colapsan al mismo
+`int64` que exige el diccionario: **23 colisiones** sobre 9.486 códigos numéricos. No
+falla: el `merge` que arma el reporte es un left join, así que multiplicaba por tres cada
+fila de predicción de esos productos, inflando `n` y corrompiendo todos los WAPE.
+Mitigado con `resolver_variantes()`, que recorta el catálogo por el **código de texto que
+efectivamente vendió** y corta si dos variantes del mismo número tienen ventas (hoy
+ninguna, pero colapsarlas fusionaría dos productos reales en una serie). Se detectó
+porque el catálogo salía con 2.195 filas para 2.189 series.
+
+**2. `nota_credito` es `BIT(1)`** y el driver lo devuelve como bytes (`b'\x01'`). Del
+lado SQL no molesta —MySQL evalúa `= 1` sobre el BIT— pero cualquier comparación laxa en
+Python da `False` para **toda** nota de crédito: las devoluciones sumarían en vez de
+restar. **Lo atrapó el cross-check pandas vs SQL**, que es exactamente para lo que se
+construyó.
+
+> Las dos son trampas del esquema real, no del motor, y **el ETL de R1 se las va a comer
+> igual**. Quedaron anotadas como pendiente del Analista Funcional en
+> `planning/roadmap.md` (impacto a evaluar en DER, contrato §1/§3 y Plan de Pruebas). No
+> se editan esos documentos desde acá: son de otro módulo (CLAUDE.md §2).
+
+**3. El catálogo tiene ids no numéricos** (servicios y conceptos, como anticipa el EDA
+§1). La query de ventas ya los filtraba con `REGEXP '^[0-9]+$'`; la de catálogo no, y
+moría al castear después de haberse traído todas las ventas.
+
+**4. `host.docker.internal` no resuelve fuera de un contenedor.** Cotizaciones corre
+dockerizada y llega así al túnel SSH; nativo hay que ir a `127.0.0.1`, donde
+`docker-compose.override.yml` publica el 3306. Sin remapeo la corrida muere recién a los
+~60 s con un timeout opaco. El script lo remapea y lo avisa. **Precondición operativa:**
+el túnel tiene que estar levantado (`docker compose --profile dev up`).
+
+**5. Confirmada la deuda #2 del generador (T0.4).** Los datos reales traen **281 meses
+con neto negativo**; el sintético tiene cero. Y **4.848 meses de neto exactamente cero**,
+que quedan sin `precio_prom` — el caso que motivó la guarda del infinito.
+
+**Bonus para T0.4:** ya está medida la distribución real de productos por categoría
+(`CLINICO` 723, `SIN CATEGORIA` 491, `ANTIPARASITARIO EXTERNO` 359, `HIGIENE Y BELLEZA`
+213, `ANTIPARASITARIO INTERNO` 136, `CARDIOLOGICO` 63, `DESCARTABLES` 51, `ALIMENTO` 46,
+`BIOLOGICO` 44, `ANTIARTROSICO` 43, `ACCESORIO` 19, `HIGIENE Y BELLEZA (odontologico)`
+1). Es lo que faltaba para que corregir las categorías del sintético sea algo más que
+renombrar: la distribución es **muy** despareja y el generador hoy reparte uniforme.
+
+### 5.6 M1.8 cerrado — el piso real (2026-07-31)
+
+Corrida `f7af767ca7e6`: **2.189 productos, 18 cortes, horizonte 12, 214 min** con
+`n_jobs=4`. Tabla en `backtests/baselines-real-2026-07-31.md`. **Este es el piso a
+batir.**
+
+| nivel | h=1 | h=3 | h=6 | h=12 |
+|---|---|---|---|---|
+| producto | 0,3241 | 0,3380 | 0,3538 | 0,3470 |
+| categoría | 0,1506 | 0,1667 | 0,2096 | 0,2229 |
+| total | 0,1223 | 0,1271 | 0,1574 | 0,1544 |
+
+**1. El sesgo real es ≈ −1,4% a nivel total, no −10%.** El sintético había dado −10% y de
+ahí salió la advertencia de que el gate de ±5% de M2 era "vara a mejorar". **Sobre datos
+reales los baselines ya cumplen ese gate** (−0,0136 a h=1; el peor horizonte es +0,0521 a
+h=12, también dentro de ±5%). La conclusión sacada del sintético estaba equivocada, y es
+un recordatorio de que ese dataset no calibra magnitudes.
+
+**2. El WAPE real es menos de la mitad del sintético** (0,32 contra 0,81 a grano
+producto). No es que el motor mejorara: la composición es otra —el catálogo real es 58%
+`suave` contra el 25% forzado de la muestra estratificada de M1.7— y la señal real tiene
+estructura que el generador no reproduce. **Las dos tablas no se comparan entre sí**, que
+es exactamente lo que §5.2 anticipó.
+
+**3. La cobertura NO es 1,0, y la causa está diagnosticada.** Baja de 0,9918 (h=1) a
+0,8794 (h=12) a grano producto. El **100,00%** de las 13.889 filas sin predicción son
+productos cuya **primera venta es posterior al corte**: 277 series, de 301 altas de
+catálogo desde 2024-12. Cero filas sin explicar. Un baseline univariado no puede predecir
+una serie que no existía en el corte; el arnés registra el real (ADR-010) sin predicción
+y la cobertura lo expone. **`SIN CATEGORIA` cae a 0,52 a h=12** porque 252 de esos 301
+productos nuevos aún no están clasificados — leer esa fila como "se predice mal" sería un
+error.
+
+> **Es el caso que T0.4 #3 anticipó y el sintético no puede producir**: cero altas dentro
+> de la ventana contra 301 reales. La deuda del generador dejó de ser teórica.
+
+**4. Ninguno de los 7 candidatos domina, otra vez** — el más ganador (`SeasonalNaive`) se
+lleva 678 de 2.186 series (31%), casi el mismo techo que en el sintético. Y **`CrostonSBA`
+vuelve a ganar mucho más en `suave` (322) que en `lumpy` (16)**: el hallazgo contraintuitivo
+de §5.3 se replica sobre datos reales, así que no era un artefacto del generador.
+
+**Consecuencia para M2, a resolver antes de M2.5:** los productos nuevos son el caso de
+mayor incertidumbre y **ningún baseline los cubre**. Es un hueco que el modelo global sí
+podría llenar con features de categoría/laboratorio (arranque en frío). La comparación
+champion/challenger tiene que hacerse **a igual cobertura**, o es injusta en las dos
+direcciones. Se suma a la decisión ya abierta de §12.5.
+
+**Mejora al script, ya aplicada:** `_nota_de_cobertura()` hace que toda tabla futura con
+cobertura < 1 lleve la advertencia en el encabezado. Dejar el número en una columna al
+medio de la tabla es dejarlo donde nadie lo mira.
 
 **Gate de salida de M1:** existe una tabla de error de baselines, sobre datos reales, desagregada por horizonte × nivel × cuadrante, congelada y commiteada. A partir de acá **ningún modelo se promociona sin batirla** (disciplina baselines-first, CLAUDE.md §6).
 
@@ -147,8 +367,11 @@ Objetivo: que en S1 pueda escribir el arnés sin depender de nadie.
 |---|---|---|---|---|
 | S0 | Desbloqueo | Generador sintético · esqueleto · capa de datos | T0.1–T0.3 | ✅ 2026-07-27 — T0.2 (paquete instalable, `pytest`+`ruff` verdes), T0.3 (`motor/src/motor/datos/`, 8 tests verdes) y T0.1 (`datasets/sintetico/`: generador top-down con rechazo/resorteo por producto; gate de cuadrantes cumplido con desvíos ≤1,25 pts sobre ±3 de tolerancia — `datasets/sintetico/manifiesto.json`) |
 | S1–S2 | M1 | Arnés · métricas · test anti-leakage · clasificador de cuadrantes | M1.0–M1.4 | ✅ 2026-07-27 — **M1.0** (§5.1: los 9 defectos del relevamiento, con test de regresión cada uno), **M1.1** (arnés + corridas identificadas), **M1.2** (métricas por nivel + reporte tabular con todos sus cortes), **M1.3** (red anti-leakage, `pytest -m innegociable`) y **M1.4** (clasificador de cuadrantes, con la dependencia `datasets/`→motor invertida). **82 tests verdes**, ningún `xfail`, `ruff` limpio. El arnés ya puede medir baselines |
-| S3 | M1 | Baselines + intermitentes · tabla sintética | M1.5–M1.7 | ⬜ |
-| S4 | M1 | **Piso real congelado** (máquina autorizada) | M1.8 | ⬜ |
+| S3 | M1 | Baselines + intermitentes | M1.5–M1.6 | ✅ 2026-07-29 — `modelado/baselines.py` (5 modelos `statsforecast`) y `modelado/intermitentes.py` (`CrostonSBA`/`TSB`), ambos conformes al contrato `PredictorFn`, con `fallback_model` para series de 1-3 meses de historia y verificados por cuadrante sobre datos reales. **90 tests verdes**, `ruff` limpio. Riesgo abierto para M1.7/M1.8: `AutoARIMA`/`AutoTheta` no escalan sin `n_jobs` |
+| S3 | M1 | Selección por serie · tabla sintética | M1.7 | ✅ 2026-07-30 — `modelado/seleccion.py` (los 7 candidatos en un solo pase, ganador por MASE, `resumen_de_ganadores`) + `scripts/congelar_baselines_sintetico.py`. Tabla congelada: `backtests/baselines-sintetico-2026-07-30.md` (corrida `f993bc6ae12e`, 400 productos estratificados según §5.2, 18 cortes, cobertura 1,0). **Hallazgo en §5.3:** los 7 ganan alguna serie y Croston gana más en `suave` que en `lumpy` — el enrutamiento por cuadrante habría sido peor. **108 tests verdes**, `ruff` limpio |
+| S3 | M1 | Checkpointing del arnés (precondición de M1.8) | M1.7a | ✅ 2026-07-29 — `ejecutar_backtest(directorio_checkpoint=...)`: un parquet por corte, reanudación que solo predice lo que falta, y **guarda por `id` de corrida** que rechaza reanudar con otra configuración o con otros datos en vez de mezclar checkpoints ajenos. 6 tests |
+| S4 | M1 | Extract del snap (precondición de M1.8) | M1.8a | ✅ 2026-07-31 — `motor/scripts/extraer_snap.py` **ejecutado**: 137.399 filas, 2.189 series, 96 meses sin huecos, 12 categorías, cross-check en verde y **2.189 productos activos, el número exacto del EDA**. SQL derivada de la que cotizaciones ya corre en producción con tres diferencias deliberadas (§5.4). Cinco hallazgos en §5.5, dos de ellos del esquema real que **también afectan al ETL de R1** (`producto.id` es varchar con colisiones; `nota_credito` es BIT) → pendiente del Analista en `planning/roadmap.md`. **32 tests**; los tres de regresión verificados fallando sin su arreglo |
+| S4 | M1 | **Piso real congelado** (máquina autorizada) | M1.8 | ✅ 2026-07-31 — `backtests/baselines-real-2026-07-31.md`, corrida `f7af767ca7e6`: 2.189 productos × 18 cortes × h=12 en 214 min con `n_jobs=4`. **Gate de M1 cumplido.** WAPE 0,32/0,15/0,12 (producto/categoría/total, h=1) y **sesgo total −1,4%, que ya cumple el ±5% de M2** — el −10% del sintético era un artefacto del generador. Cobertura < 1 explicada y diagnosticada al 100%: altas de catálogo (§5.6) |
 | S4–S5 | — | Deuda del generador (precondición de M2.2, no bloquea M1) | T0.4 | ⬜ ver §12.1 |
 | S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | ⬜ |
 | S7 | M2 | LightGBM global · cuantiles | M2.3–M2.4 | ⬜ |
@@ -217,7 +440,22 @@ M1, pero **la primera bloquea M2.2** y la tercera debilita lo que el dataset pue
   `id_corrida` sobrevive. Si cruzás el reporte con el catálogo antes de armar las tablas,
   guardate la `Corrida` y reponela, o el reporte sale anónimo y no es congelable.
 - **Al clasificar para enrutar método** (M1.5/M1.6) hay que pasar `hasta=corte`. Con el
-  default (último mes de los datos) el modelo elige su método viendo el futuro.
+  default (último mes de los datos) el modelo elige su método viendo el futuro. **Ojo:**
+  esto aplica al *enrutamiento*; para desagregar el reporte por cuadrante (uso 2 de
+  `clasificacion.py`) el default está bien. La selección de M1.7 no enruta por cuadrante,
+  así que ahí no hay nada que recortar.
+- **`n_jobs` se paga por corte, no por producto** (medido en M1.7): el arnés llama al
+  predictor una vez por corte y cada llamada arma un pool de procesos nuevo que en Windows
+  reimporta `scipy`/`statsforecast` en cada worker. Con 8 productos, `n_jobs=8` es **2x más
+  lento** que serie; recién por encima de ~180 productos conviene. Y `n_jobs` alto **mata
+  la corrida** por archivo de paginación chico: `n_jobs=14` no arranca y `n_jobs=8` murió
+  en el 5º corte de la corrida de M1.7. **En esta máquina: `n_jobs=4`.** Tabla completa de
+  mediciones en `src/motor/modelado/README.md` §Costo y paralelismo.
+- **Corrida larga sin `--checkpoint-dir` es una apuesta perdida.** Lo de arriba no es
+  hipotético: la corrida de M1.7 murió a mitad de camino y solo se salvó porque los cortes
+  hechos estaban en disco. Para M1.8 (escala real, más horas) es obligatorio.
+- **No pipees el script a `grep` al correrlo en background:** el exit code que ves es el de
+  `grep`, así que una corrida que murió reporta "exit code 0". Redirigí a un archivo.
 - **Los números publicados hasta hoy no dicen nada de calidad predictiva:** salen de un
   predictor de juguete ("último valor conocido") que solo existe en los tests. El primer
   número con significado sale de M1.7, y el que vale es M1.8.
@@ -231,6 +469,50 @@ M1, pero **la primera bloquea M2.2** y la tercera debilita lo que el dataset pue
   antes de cerrar M3.2 (ver la nota de §7).
 - **MAPE comunicacional** (ADR-008: solo en niveles agregados, para la UI) no está
   implementado. Probablemente sea del frontend (R4); acordarlo, no asumirlo.
+
+### 12.4 Sensibilidad a clientes de alto volumen — abierta, no desarrollada
+
+**Origen (2026-07-29):** el motor agrega `hecho_venta_mensual_producto` sumando todos los clientes. Unos pocos clientes de volumen muy alto pueden dominar el agregado mensual de un producto y así:
+
+- inflar o deformar el WAPE/MASE de ese producto en el backtest;
+- cambiar su cuadrante de intermitencia (M1.4) según si ese cliente compró o no ese mes;
+- hacer que la selección por serie de M1.7 (o el piso de M1.8) termine eligiendo el modelo que mejor sigue a ese cliente puntual, no la demanda típica del resto de la cartera.
+
+**Decisión pendiente:** antes de congelar M1.7/M1.8 en definitiva, evaluar si conviene correr el arnés también sobre una base que excluya a esos clientes y comparar contra el agregado completo. **Explícitamente no se desarrolla todavía** — falta definir, cuando se retome:
+
+- **Fuente de datos:** ¿sintético (simular un cliente de volumen desproporcionado) o extract real (solo corre en la máquina autorizada; al repo únicamente entrarían métricas agregadas, nunca los datos ni la identidad de los clientes — regla de oro, CLAUDE.md §4)?
+- **Criterio de exclusión:** top-N por volumen acumulado / umbral de participación por producto-mes / lista puntual de clientes — ninguno decidido todavía.
+
+No bloquea M1.7 ni M1.8; queda como nota para retomar una vez que se fije el criterio.
+
+### 12.5 El piso de M1.7/M1.8 es optimista: la selección por serie es retrospectiva
+
+**Hallazgo del 2026-07-29, al implementar M1.7.** `elegir_mejor_por_serie` elige el
+ganador de cada serie con el MASE de **todos** los cortes del backtest, y
+`armar_reporte_seleccionado` aplica ese ganador también a los cortes más viejos. O sea:
+el modelo de cada serie se eligió con información posterior a las filas donde se mide.
+
+Es exactamente lo que especifica `plan-diseno.md` §M1 ("cada producto queda con su mejor
+baseline según MASE en backtest") y es la convención habitual para fijar una referencia
+fuerte, así que M1.7 se implementó así. Pero hay que tenerlo escrito porque **no es un
+procedimiento prospectivo**: un pipeline productivo elegiría el método en cada corte con
+datos ≤ corte.
+
+**Qué NO es.** No es el leakage que ataja la red de M1.3. Cada predicción individual
+sigue siendo limpia — el arnés garantiza historia ≤ corte y eso no cambió. Lo que usa
+información posterior es la elección de *qué modelo* mirar, no lo que cada modelo vio.
+
+**Consecuencia, y por qué importa antes de M2.5.** Este piso está **más alto** que el de
+un procedimiento prospectivo: la selección en hindsight le regala al baseline un
+privilegio que el modelo global de M2 no tendría. Si M2.5 compara el global (medido
+prospectivamente) contra este piso (medido con hindsight), la comparación castiga al
+global y el gate de M2 podría rechazar un modelo que en realidad es mejor.
+
+**Decisión pendiente (antes de M2.5, no bloquea M1.7/M1.8):** o se agrega una variante
+prospectiva de la selección (elegir el método en cada corte con los cortes anteriores) y
+el piso se recalcula con ella, o se le da al global el mismo trato retrospectivo. Lo que
+no se puede es comparar los dos criterios entre sí. Si se elige nivelar, **va ADR**:
+mueve un criterio de aceptación del gate de M2.
 
 ## 13. Fuera de este track
 

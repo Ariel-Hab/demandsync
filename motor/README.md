@@ -1,6 +1,6 @@
 # motor/ — Motor de Predicción de Demanda
 
-**Responsable:** ML Specialist. **Estado:** fase de diseño (Release 0/2). Sin código todavía.
+**Responsable:** ML Specialist. **Estado:** M1 en curso (S0 y M1.0–M1.7 cerrados; falta M1.8, el piso real). Ver [`roadmap-motor.md`](roadmap-motor.md) §9 para el estado vigente.
 
 > **Regla de trabajo en este módulo (CLAUDE.md §6):** todo desarrollo se controla contra [`roadmap-motor.md`](roadmap-motor.md). Antes de codear, ubicá la tarea en una unidad de trabajo (`T0.x`/`M1.x`/…); si no existe, se agrega al roadmap primero. No se empieza un hito con el gate del anterior sin cumplir. Al terminar, se actualiza el estado de la unidad en el roadmap en la misma unidad de trabajo.
 
@@ -49,9 +49,18 @@ comparando contra ese archivo. Quitá `--sin-contrato` solo si necesitás los
 
 Layout `src/`: el paquete importable es `motor` (`motor/src/motor/`). Ya existen `datos/`
 (T0.3), `backtesting/` (M1.0–M1.3, ver su propio
-[README](src/motor/backtesting/README.md)) y `clasificacion.py` (M1.4: cuadrantes
-Syntetos-Boylan por serie). El resto de los subpaquetes (`modelado/`, etc.) se agregan en
-sus propias unidades de trabajo del roadmap.
+[README](src/motor/backtesting/README.md)), `clasificacion.py` (M1.4: cuadrantes
+Syntetos-Boylan por serie) y `modelado/` (M1.5–M1.7: baselines `statsforecast`, rama
+intermitente y selección por serie, ver su propio
+[README](src/motor/modelado/README.md)). El resto de los subpaquetes se agregan en sus
+propias unidades de trabajo del roadmap.
+
+Fuera del paquete hay dos carpetas de scripts, ninguna importable por el job batch:
+
+- [`ejemplos/`](ejemplos/) — documentación ejecutable de cada pieza, para explorar y tocar.
+- [`scripts/`](scripts/) — operación del track. Hoy:
+  `congelar_baselines_sintetico.py`, que genera la tabla de referencia de M1.7/M1.8 en
+  `backtests/`.
 
 ```bash
 pytest                     # toda la suite

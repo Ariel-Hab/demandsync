@@ -12,7 +12,11 @@ es la referencia rápida de **cómo usar el código**, no repite el diseño.
 > cortes —incluido el de cuadrante, vía `motor.clasificacion`— y la red anti-leakage.
 > 82 tests verdes, ningún `xfail`.
 >
-> Lo que sigue es **M1.5/M1.6**: los baselines de verdad. El arnés ya puede medirlos.
+> **M1.5/M1.6/M1.7 (2026-07-29):** los baselines de verdad ya corren dentro del arnés
+> —`motor.modelado.baselines` (statsforecast) y `motor.modelado.intermitentes`
+> (Croston/TSB)— y `motor.modelado.seleccion` elige el mejor por serie vía MASE. Ver su
+> propio [README](../modelado/README.md). El arnés sumó además **checkpointing por corte**
+> (M1.7a, ver abajo) para que las corridas largas de M1.7/M1.8 sean reanudables.
 
 ## Piezas
 
@@ -20,7 +24,7 @@ es la referencia rápida de **cómo usar el código**, no repite el diseño.
 |---|---|
 | `panel.py` | `densificar(datos, ...)` — **ADR-010**: rellena con cero los meses sin venta, desde la primera venta de cada serie. Paso previo obligatorio a medir. |
 | `cortes.py` | `generar_cortes(fechas, n_cortes)` — los puntos de corte rolling-origin, sobre el **calendario**. Sin shuffle, sin k-fold. |
-| `arnes.py` | `ejecutar_backtest(datos, predecir, ...)` — el punto de entrada único. Densifica, orquesta cortes y llama a un predictor pluggable. |
+| `arnes.py` | `ejecutar_backtest(datos, predecir, ...)` — el punto de entrada único. Densifica, orquesta cortes y llama a un predictor pluggable. Con `directorio_checkpoint` la corrida es reanudable (M1.7a). |
 | `metricas.py` | `wape()`, `sesgo()` (implementación propia) y `mase()` (wrapper de `utilsforecast`; densifica su `train_df`). |
 | `corrida.py` | `Corrida` + `identificar_corrida()` — trazabilidad: `id` = hash de configuración + huella de los datos. |
 | `reporte.py` | `construir_reporte()` (juego de tablas por horizonte × nivel × categoría) y `a_markdown()` (lo que se congela en `motor/backtests/`). |
@@ -72,6 +76,33 @@ sesgo(reporte, ["horizonte"], columna_pred="mi_modelo", columnas_nivel=[])
 
 mase(reporte, modelos=["mi_modelo"], train_df=hecho_producto)
 ```
+
+## Checkpointing para corridas largas (M1.7a)
+
+Las corridas de M1.7/M1.8 con los 7 baselines son de horas (medido: el catálogo real
+son ~7 h con `n_jobs=8`) y el pool de procesos corre al límite de memoria de la máquina.
+Sin checkpoint, morir en la hora 6 significa perder todo.
+
+```python
+reporte = ejecutar_backtest(
+    hecho_producto, mi_predictor, n_cortes=18, horizonte_max=12,
+    directorio_checkpoint="ruta/a/checkpoints",   # apagado por defecto
+)
+```
+
+Cada corte se persiste a `corte_<AAAA-MM>.parquet` apenas termina; volver a llamar con el
+mismo directorio saltea los cortes ya hechos y solo predice los que faltan. El reporte
+resultante es idéntico al de una corrida de una sola pasada
+(`test_reanudar_a_medias_solo_predice_los_cortes_que_faltan` lo fija).
+
+**La guarda que lo hace seguro:** el directorio lleva un `corrida.json` con el `id` de
+corrida —hash de configuración + huella de los datos—, y reanudar con otra configuración o
+con otros datos **falla** en vez de mezclar checkpoints ajenos. Ese es el modo en que este
+tipo de caché arruina un resultado sin avisar, así que se rechaza explícitamente. Para
+rehacer desde cero, borrá el directorio.
+
+Un corte que no produce filas comparables no deja checkpoint: recalcularlo no cuesta nada
+y evita un parquet vacío dando vueltas.
 
 Para la tabla completa —la que se congela en `motor/backtests/`— no se llaman las
 métricas una por una:
