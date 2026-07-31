@@ -526,11 +526,28 @@ violar. Queda anotado abajo como deuda; el test vuelve el día que haya altas de
    por si M2 encuentra algo raro en ese cuadrante.
 2. **`sin_ancla_propia` sigue sobrando ~4 puntos** (29,5% contra el objetivo 25,4%). **Es
    preexistente, no lo introdujo T0.4**: el manifiesto anterior daba 30,0%. Sale de que los
-   productos intermitentes se saltean los últimos 3 meses por azar, encima del forzado.
+   productos intermitentes se saltean los últimos 3 meses por azar, encima del forzado. Ver
+   la deuda diferida abajo.
 3. **Asignar 6,4% de bajas produce 5,4% medidas.** No es error de calibración: el criterio
    estricto no cuenta como baja a un producto cuyo silencio final no supera su propio hueco
    histórico, y un `lumpy` que ya tenía huecos de 30 meses puede morir sin ser reconocible. La
    misma brecha existe en los datos reales.
+
+**Deuda diferida — `sin_ancla_propia` al 29,5% contra el 25,4% de EDA §4.** Preexistente, y se
+difiere **por decisión explícita (2026-07-31)**: en la etapa académica el sintético no necesita
+replicar las proporciones reales al punto, le alcanza con reproducir los *mecanismos*. Se anota
+para resolverlo después, no se resuelve ahora. Tres cosas para quien lo levante:
+
+- **Desvía en la dirección segura.** M2.1 ejercita el fallback categoría → laboratorio → IPC un
+  poco **más** de lo que le tocaría, no menos. Si el desvío fuera al revés habría que arreglarlo
+  antes de M2.1, no después.
+- **El arreglo ya está escrito, en las bajas.** Mismo patrón que `_sortear_bajas` +
+  `catalogo.py:41-43`: en vez de forzar `round(n × 0,254)` productos, contar primero cuántos se
+  quedan sin venta reciente **solos** (los muertos ya se descuentan; faltan los intermitentes que
+  se saltean los últimos 3 meses por azar) y forzar únicamente el resto. Requiere simular la serie
+  antes de fijar la bandera, o estimar la probabilidad de hueco a partir de `p_occ` del arquetipo.
+- **Vale la misma advertencia que las bajas.** Asignado ≠ medido: acá también hay que calibrar
+  contra el número que sale del manifiesto, no contra el que se pone en `parametros.py`.
 
 **Deuda nueva que abrió T0.4** (ninguna bloquea M2):
 
