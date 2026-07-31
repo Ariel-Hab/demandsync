@@ -18,6 +18,13 @@ dev = [
     "pytest>=8,<9",
     "ruff>=0.6,<1",
 ]
+# Solo para `motor/scripts/extraer_snap.py` (M1.8). NO es dependencia del paquete: el
+# motor lee hechos por interfaz de repositorio y es agnóstico a la fuente (ADR-009).
+# Instalar con `pip install -e ".[extract]"` únicamente en la máquina autorizada.
+extract = [
+    "sqlalchemy>=2,<3",
+    "pymysql>=1.1,<2",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
