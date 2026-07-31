@@ -3,6 +3,17 @@ datasets/*
 !datasets/README.md
 !datasets/sintetico/
 datasets/sintetico/salida/
+
+# Salida de motor/ejemplos/ — exploración, no resultados a versionar
+motor/ejemplos/salida/
+
+# Checkpoints del arnés (M1.7a): son el reporte CRUDO fila por fila, no métricas
+# agregadas. En M1.8 contienen datos reales del cliente, así que jamás se commitean —
+# lo único publicable de un backtest es la tabla de motor/backtests/.
+motor/checkpoints/
+checkpoints/
+corte_*.parquet
+
 *.db
 *.sqlite
 *.dump

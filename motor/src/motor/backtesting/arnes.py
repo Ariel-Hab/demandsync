@@ -6,13 +6,18 @@ intencionalmente angosto (recibe historia + corte + horizonte, devuelve
 predicciones) para que enchufar un baseline nuevo (M1.5/M1.6) no toque este módulo.
 """
 
+import json
 from collections.abc import Callable
+from pathlib import Path
 
 import pandas as pd
 
-from .corrida import identificar_corrida
+from .corrida import Corrida, identificar_corrida
 from .cortes import generar_cortes
 from .panel import densificar
+
+MANIFIESTO_CHECKPOINT = "corrida.json"
+"""Archivo que identifica a qué corrida pertenecen los checkpoints de un directorio."""
 
 PredictorFn = Callable[..., pd.DataFrame]
 """Firma del predictor: `(historia_hasta_el_corte, corte, horizonte_max)` -> DataFrame.
@@ -57,6 +62,38 @@ def _recortar_auxiliares(
     }
 
 
+def _preparar_checkpoint(directorio: Path, corrida: Corrida) -> None:
+    """Crea el directorio de checkpoints y verifica que sea de **esta** corrida.
+
+    Sin esta guarda, reanudar con otra configuración (otros cortes, otro horizonte, otros
+    datos) leería checkpoints ajenos y devolvería un reporte mezclado que parece válido.
+    Como el `id` de corrida es hash de configuración + huella de datos, alcanza con
+    compararlo: si no coincide, la reanudación se rechaza en vez de contaminar el
+    resultado.
+    """
+    directorio.mkdir(parents=True, exist_ok=True)
+    manifiesto = directorio / MANIFIESTO_CHECKPOINT
+
+    if manifiesto.exists():
+        previo = json.loads(manifiesto.read_text(encoding="utf-8"))
+        if previo.get("id") != corrida.id:
+            raise ValueError(
+                f"{directorio} tiene checkpoints de la corrida {previo.get('id')}, no de "
+                f"{corrida.id}: cambió la configuración o los datos. Usá un directorio "
+                "nuevo, o borrá este si querés rehacer la corrida desde cero."
+            )
+        return
+
+    manifiesto.write_text(
+        json.dumps({"id": corrida.id, "fecha_ejecucion": corrida.fecha_ejecucion}, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _ruta_de_corte(directorio: Path, corte: pd.Timestamp) -> Path:
+    return directorio / f"corte_{corte:%Y-%m}.parquet"
+
+
 def ejecutar_backtest(
     datos: pd.DataFrame,
     predecir: PredictorFn,
@@ -69,6 +106,7 @@ def ejecutar_backtest(
     tablas_auxiliares: dict[str, pd.DataFrame] | None = None,
     columna_fecha_auxiliares: str = "fecha_calculo",
     fecha_ejecucion: str | None = None,
+    directorio_checkpoint: str | Path | None = None,
 ) -> pd.DataFrame:
     """Corre el arnés rolling-origin completo y devuelve un reporte largo.
 
@@ -108,6 +146,16 @@ def ejecutar_backtest(
     de pandas se pierde en varias operaciones; para conservar los metadatos, tomalos
     antes de transformar el reporte. `fecha_ejecucion` se puede fijar para tests
     determinísticos: no entra en el `id`, que es hash de configuración + datos.
+
+    **Checkpointing (M1.7a).** Con `directorio_checkpoint`, cada corte se persiste a
+    parquet apenas termina y una corrida interrumpida se reanuda salteando los cortes ya
+    hechos. Está pensado para las corridas largas de M1.7/M1.8 (medido: el catálogo real
+    con los 7 baselines son horas, y el pool de procesos corre al límite de memoria), no
+    para el uso normal — por defecto está apagado y el comportamiento no cambia.
+
+    El directorio lleva un `corrida.json` con el `id`: si se reanuda con otra
+    configuración o con otros datos, el `id` no coincide y la corrida **falla** en vez de
+    mezclar checkpoints ajenos. Para rehacer desde cero, borrá el directorio.
     """
     columnas_id = list(columnas_id) if columnas_id else ["id_producto"]
     _validar_grano(
@@ -126,8 +174,31 @@ def ejecutar_backtest(
         )
     cortes = generar_cortes(datos[columna_fecha], n_cortes=n_cortes)
 
+    # La Corrida se arma acá, antes del loop, porque su `id` es lo que valida los
+    # checkpoints: depende solo de la configuración y de los datos, no de los resultados.
+    corrida = identificar_corrida(
+        datos=datos,
+        cortes=cortes,
+        n_cortes=n_cortes,
+        horizonte_max=horizonte_max,
+        columnas_id=columnas_id,
+        columna_fecha=columna_fecha,
+        columna_objetivo=columna_objetivo,
+        densificado=densificar_calendario,
+        fecha_ejecucion=fecha_ejecucion,
+    )
+
+    checkpoint = Path(directorio_checkpoint) if directorio_checkpoint is not None else None
+    if checkpoint is not None:
+        _preparar_checkpoint(checkpoint, corrida)
+
     reportes = []
     for corte in cortes:
+        ruta_corte = _ruta_de_corte(checkpoint, corte) if checkpoint is not None else None
+        if ruta_corte is not None and ruta_corte.exists():
+            reportes.append(pd.read_parquet(ruta_corte))
+            continue
+
         historia = datos[datos[columna_fecha] <= corte]
         if tablas_auxiliares is None:
             predicciones = predecir(historia, corte, horizonte_max)
@@ -161,27 +232,20 @@ def ejecutar_backtest(
 
         combinado = reales.merge(predicciones, on=columnas_id + [columna_fecha], how="left")
         if combinado.empty:
+            # Sin checkpoint: un corte vacío no cuesta nada de recalcular al reanudar, y
+            # un parquet vacío haría ida y vuelta de dtypes sin necesidad.
             continue
         combinado["corte"] = corte
         combinado["horizonte"] = (combinado[columna_fecha].dt.year - corte.year) * 12 + (
             combinado[columna_fecha].dt.month - corte.month
         )
+        if ruta_corte is not None:
+            combinado.to_parquet(ruta_corte, index=False)
         reportes.append(combinado)
 
     if not reportes:
         raise ValueError("Ningún corte produjo filas comparables entre predicción y real")
 
-    corrida = identificar_corrida(
-        datos=datos,
-        cortes=cortes,
-        n_cortes=n_cortes,
-        horizonte_max=horizonte_max,
-        columnas_id=columnas_id,
-        columna_fecha=columna_fecha,
-        columna_objetivo=columna_objetivo,
-        densificado=densificar_calendario,
-        fecha_ejecucion=fecha_ejecucion,
-    )
     reporte = pd.concat(reportes, ignore_index=True)
     reporte["id_corrida"] = corrida.id
     reporte.attrs["corrida"] = corrida
