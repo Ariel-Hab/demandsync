@@ -36,6 +36,11 @@ package-dir = { "" = "src" }
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# El IPC del INDEC (último peldaño del fallback de ADR-002) es dato público que viaja
+# dentro del paquete: sin esto la rueda se construye sin él y la cascada se queda sin fondo.
+[tool.setuptools.package-data]
+"motor.datos" = ["*.csv"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

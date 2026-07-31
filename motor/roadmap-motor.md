@@ -335,7 +335,7 @@ medio de la tabla es dejarlo donde nadie lo mira.
 
 | # | Unidad de trabajo | Semana | Entregable / gate |
 |---|---|---|---|
-| **M2.1** | **Transformador de deflación (ADR-002)**: ancla por producto + índices de nivel (media geométrica ponderada) + fallback categoría → laboratorio → IPC + clamp de ratios. Los casos CP-INF-01..05 se escriben como tests unitarios del transformador | S5 | Componente reutilizable + tests CP-INF-*; el fallback se testea con la misma prioridad que el ancla directa (lo necesita el 25,4% de los productos — EDA §4); **test propio del precio implícito no utilizable** — 4.848 filas reales NaN por `unidades == 0` y 22 con precio ≤ 0 por signos cruzados (§5.5 #6) |
+| **M2.1** | **Transformador de deflación (ADR-002)**: ancla por producto + índices de nivel (media geométrica ponderada) + fallback categoría → laboratorio → IPC + clamp de ratios. Los casos CP-INF-01..05 se escriben como tests unitarios del transformador | S5 | Componente reutilizable + tests CP-INF-*; el fallback se testea con la misma prioridad que el ancla directa (lo necesita el 25,4% de los productos — EDA §4); **test propio del precio implícito no utilizable** — 4.848 filas reales NaN por `unidades == 0` y 22 con precio ≤ 0 por signos cruzados (§5.5 #6). **Insumo del último peldaño resuelto** ✅ 2026-07-31: `motor.datos.ipc` trae el IPC nacional del INDEC (§6.1) |
 | **M2.2** | Features: lags (1,2,3,6,12), rolling means (3,6,12), mes del año, `mismo_mes_año_anterior`, categoría/familia/laboratorio, `CLIENTE_FEATURE`, precio real deflactado y su variación | S5–S6 | Construcción de features pasando el test M1.3. **Precondición T0.4: cumplida** ✅ 2026-07-31 — `CLIENTE_FEATURE` ya sale con 32 versiones y el arnés la recorta por `fecha_calculo <= corte`; la categoría ya es una de las 12 reales, con `SIN CATEGORIA` al 22% y una categoría de un solo producto para el encoding (§12.1) |
 | **M2.3** | LightGBM global con `mlforecast`, **multi-horizonte directo** (un modelo por h ∈ {1,3,6,12}) | S6–S7 | Corre dentro del arnés, comparable 1:1 con el piso |
 | **M2.4** | Intervalos: quantile regression P10/P50/P90 | S7 | Cobertura empírica de los intervalos reportada (¿el P10–P90 cubre ~80%?) |
@@ -344,6 +344,34 @@ medio de la tabla es dejarlo donde nadie lo mira.
 **Gate de salida de M2** (= puntos 2–4 de la Definición de listo de `plan-diseno.md`): el global ML gana en WAPE a niveles **producto y categoría** para **h=1 y h=3** (para h=6/12 alcanza empatar con mejor intervalo), y el sesgo global a nivel total queda dentro de **±5%**. Donde no gana, **manda el baseline** — el resultado legítimo de M2 puede ser "el baseline se queda con el 30% de las series", y eso se documenta, no se esconde.
 
 **Riesgo específico:** validar solo en sintético haría ver al modelo mejor de lo que es (el generador no tiene la irregularidad del mundo real). Por eso M2.5 exige la corrida real.
+
+### 6.1 El IPC del INDEC, insumo de M2.1 (2026-07-31)
+
+`motor/src/motor/datos/ipc_indec.csv` + `motor.datos.ipc.cargar_ipc()`. Serie
+`148.3_INIVELNAL_DICI_M_26` de `apis.datos.gob.ar` (IPC Nivel General Nacional, base
+dic-2016), **115 meses de 2016-12 a 2026-06, sin huecos ni nulos**, CC-BY 4.0. Cubre con
+holgura los 96 meses del extract. Acumulada en esa ventana: **×79,2**, que es el tamaño
+del problema que M2.1 viene a resolver.
+
+Tres cosas para no tropezar después:
+
+- **Es el único insumo externo del motor, y es dato público.** No lo alcanza ADR-006: no
+  dice nada de DFV. Viaja *dentro* del paquete (`[tool.setuptools.package-data]`), porque
+  si la rueda se construye sin él la cascada de ADR-002 se queda sin fondo.
+- **El archivo se vence.** Un corte posterior a 2026-06 no tiene deflactor, y devolver el
+  último dato disponible subestimaría la inflación **en silencio**, achicando los montos
+  deflactados de todo el tramo faltante. `cargar_ipc()` levanta `IpcDesactualizado` en vez
+  de eso. Actualizarlo es re-correr un `curl` (comando en el docstring del módulo).
+- **La base dic-2016 = 100 no importa**: la deflación usa cocientes y la base se cancela.
+  Se dejó el índice tal como lo publica la fuente para que sea verificable contra el
+  original.
+
+**9 tests** (`tests/test_datos_ipc.py`), verificados por mutación. El riesgo acá no es que
+el código falle sino que el *archivo* sea el equivocado: la misma API publica la variación
+mensual, la interanual y otras bases, y todas cargan sin error. La equivocada daría
+deflactores cercanos a 1 para toda la historia —la deflación parecería andar y no haría
+nada—; sustituyendo el CSV por la serie de variaciones caen 2 tests, y sacando la guarda
+de vencimiento cae 1.
 
 ## 7. M3 — Jerarquía, cliente y segmentos · S9–S12
 
