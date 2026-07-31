@@ -335,7 +335,7 @@ medio de la tabla es dejarlo donde nadie lo mira.
 
 | # | Unidad de trabajo | Semana | Entregable / gate |
 |---|---|---|---|
-| **M2.1** | **Transformador de deflación (ADR-002)**: ancla por producto + índices de nivel (media geométrica ponderada) + fallback categoría → laboratorio → IPC + clamp de ratios. Los casos CP-INF-01..05 se escriben como tests unitarios del transformador | S5 | Componente reutilizable + tests CP-INF-*; el fallback se testea con la misma prioridad que el ancla directa (lo necesita el 25,4% de los productos — EDA §4); **test propio del precio implícito no utilizable** — 4.848 filas reales NaN por `unidades == 0` y 22 con precio ≤ 0 por signos cruzados (§5.5 #6). **Insumo del último peldaño resuelto** ✅ 2026-07-31: `motor.datos.ipc` trae el IPC nacional del INDEC (§6.1) |
+| **M2.1** | **Transformador de deflación (ADR-002)**: ancla por producto + índices de nivel (media geométrica ponderada) + fallback categoría → laboratorio → IPC + clamp de ratios. Los casos CP-INF-01..05 se escriben como tests unitarios del transformador | S5 | Componente reutilizable + tests CP-INF-*; el fallback se testea con la misma prioridad que el ancla directa (lo necesita el 25,4% de los productos — EDA §4); **test propio del precio implícito no utilizable** — 4.848 filas reales NaN por `unidades == 0` y 22 con precio ≤ 0 por signos cruzados (§5.5 #6). **CERRADA** ✅ 2026-07-31 — `motor.deflacion`, 67 tests, cobertura de ancla 73,2% contra el 74,6% del EDA §4 (§6.1, §6.2) |
 | **M2.2** | Features: lags (1,2,3,6,12), rolling means (3,6,12), mes del año, `mismo_mes_año_anterior`, categoría/familia/laboratorio, `CLIENTE_FEATURE`, precio real deflactado y su variación | S5–S6 | Construcción de features pasando el test M1.3. **Precondición T0.4: cumplida** ✅ 2026-07-31 — `CLIENTE_FEATURE` ya sale con 32 versiones y el arnés la recorta por `fecha_calculo <= corte`; la categoría ya es una de las 12 reales, con `SIN CATEGORIA` al 22% y una categoría de un solo producto para el encoding (§12.1) |
 | **M2.3** | LightGBM global con `mlforecast`, **multi-horizonte directo** (un modelo por h ∈ {1,3,6,12}) | S6–S7 | Corre dentro del arnés, comparable 1:1 con el piso |
 | **M2.4** | Intervalos: quantile regression P10/P50/P90 | S7 | Cobertura empírica de los intervalos reportada (¿el P10–P90 cubre ~80%?) |
@@ -372,6 +372,97 @@ mensual, la interanual y otras bases, y todas cargan sin error. La equivocada da
 deflactores cercanos a 1 para toda la historia —la deflación parecería andar y no haría
 nada—; sustituyendo el CSV por la serie de variaciones caen 2 tests, y sacando la guarda
 de vencimiento cae 1.
+
+### 6.2 M2.1 cerrada — el transformador de deflación (2026-07-31)
+
+`motor/src/motor/deflacion/`: `precios` (qué precio implícito es utilizable y qué
+relativos salen de él) → `indices` (clamp, media geométrica ponderada, encadenado por
+nivel) → `transformador` (cascada, ancla, matriz de deflactores). **67 tests**, `ruff`
+limpio. La API la había fijado M1.3, no se eligió acá:
+`TransformadorDeflacion().ajustar(datos, corte).ancla_`.
+
+**La idea que ordena todo:** el objeto real no es el ancla sino un **deflactor por
+(producto, mes)**, `d = ancla / P̂`. `P̂` es el precio propio cuando es utilizable y, si no,
+el precio utilizable más cercano trasladado con el índice del nivel — cuando el mes es
+utilizable el traslado vale 1, así que hay una fórmula sola. El ancla es el caso
+`d(corte) = 1`.
+
+#### Las constantes se midieron, no se eligieron a ojo
+
+`LIMITE_RELATIVO = 3`, sobre las 125.078 muestras apareadas del extract:
+
+| clamp | pares recortados | **en el peor mes** |
+|---|---|---|
+| 1,5 | 1,841% | **31,35%** |
+| 2 | 0,613% | 3,05% |
+| **3** | **0,325%** | **0,77%** |
+| 5 | 0,221% | 0,63% |
+
+Decide la última columna: con 1,5 y con 2 el clamp reacciona a la devaluación de dic-2023
+(IPC +25,47% ese mes), o sea que recorta inflación real. En 3 el peor mes cae al nivel del
+promedio — dejó de ser sensible a eventos. Que la cola sea basura está verificado: de los
+276 pares con `r > 5`, **167 tienen algún precio bajo $5** y su revenue mediano es $1.148
+contra $53.335 del par típico.
+
+`MUESTRA_MINIMA = 3` pares para que un nivel tenga índice en un mes. El valor exacto no es
+crítico (con 2 el IPC atendería 0,22% y con 5 el 0,40%); lo que importa es que exista, para
+que un "índice" no sea el ruido de un solo producto.
+
+**Las constantes son fijas a propósito.** Derivarlas de cuantiles de cada corte sería
+leakage: el umbral dependería del futuro. Se midieron una vez, offline, sobre todo el
+histórico.
+
+#### Cuánto usa cada peldaño de la cascada (extract real, corte 2026-06)
+
+| peldaño | productos | |
+|---|---|---|
+| producto (ancla propia) | 1.602 | **73,2%** — el EDA §4 esperaba 74,6% |
+| categoría | 574 | 26,2% |
+| IPC | 12 | 0,5% |
+| laboratorio | **1** | 0,0% |
+
+**El peldaño laboratorio lo usa un producto.** Es más granular que la categoría (82
+valores contra 12), así que tiene menos muestra justo cuando se lo necesita. No es inútil
+—es el peldaño de los productos en categorías diminutas— pero **los datos reales no lo
+ejercitan: CP-INF-03 lo cubre con un caso construido a mano o esa rama queda sin testear**.
+
+#### La validación que más convence
+
+Deflactando el extract completo, el revenue anual **en pesos del corte** queda entre 36.000
+y 40.700 millones de 2019 a 2025, mientras el nominal se multiplica por 29 en el mismo
+tramo. Una distribuidora en marcha tiene que verse plana en términos reales, y se ve plana.
+Corre en **2,1 s** sobre 137.399 filas.
+
+#### Decisión abierta: el clamp no cubre el deflactor directo
+
+El clamp protege el índice *de nivel*. Cuando el producto **sí** tiene precio propio ese
+mes, el deflactor es `ancla / precio_propio` y un precio basura de $0,01 lo hace explotar:
+sobre el extract son **93 filas de 7 productos** (0,068%) con deflactor de hasta 1,2
+millones.
+
+No mueve nada monetario —aportan 1,3 M sobre 294.733 M de revenue real, 0,000%, porque su
+revenue también es ≈ 0— y por eso no se tocó dentro de M2.1: arreglarlo bien exige elegir
+**otro** umbral con su propia medición, y no se inventa una constante para corregir un
+0,000%. Pero la columna `deflactor` queda con valores sin sentido, y **eso sí importa para
+las features de M2.2**. Está fijado en un test (`test_un_precio_propio_basura_infla_su_
+deflactor_pero_no_mueve_el_agregado`) para que ninguna de las dos mitades cambie sin que se
+note. **Decidir antes de M2.2.**
+
+#### Una corrección al propio código, encontrada por mutación
+
+La primera versión documentaba la base del encadenado en el primer mes como protección
+anti-leakage. **Es falso con el cableado actual** y la mutación lo mostró: el transformador
+recorta en el corte antes de encadenar y después solo usa cocientes, así que una constante
+por corrida se cancela y `verificar_sin_leakage` no detecta el cambio de base (lo detecta
+un test de `indices`). La base en el primer mes sigue siendo lo correcto, pero por otra
+razón: mantiene pura a `indice_de_nivel` frente a quien la llame sin recortar antes. El
+motivo escrito en el código se corrigió.
+
+Lo que **sí** sostiene el anti-leakage es el recorte único en `ajustar`: sacándolo fallan
+las tres salidas verificadas (`ancla_`, `indices_`, `deflactor_`). El fixture de la red se
+amplió de 3 a 8 productos porque con 3 y muestra mínima 3 el índice de categoría se moría
+en el mes 10 y la variante `indices_` comparaba dos tablas casi vacías — pasaba sin probar
+nada, y también eso salió de la mutación.
 
 ## 7. M3 — Jerarquía, cliente y segmentos · S9–S12
 
@@ -415,7 +506,7 @@ de vencimiento cae 1.
 | S4 | M1 | Extract del snap (precondición de M1.8) | M1.8a | ✅ 2026-07-31 — `motor/scripts/extraer_snap.py` **ejecutado**: 137.399 filas, 2.189 series, 96 meses sin huecos, 12 categorías, cross-check en verde y **2.189 productos activos, el número exacto del EDA**. SQL derivada de la que cotizaciones ya corre en producción con tres diferencias deliberadas (§5.4). Cinco hallazgos en §5.5, dos de ellos del esquema real que **también afectan al ETL de R1** (`producto.id` es varchar con colisiones; `nota_credito` es BIT) → pendiente del Analista en `planning/roadmap.md`. **32 tests**; los tres de regresión verificados fallando sin su arreglo |
 | S4 | M1 | **Piso real congelado** (máquina autorizada) | M1.8 | ✅ 2026-07-31 — `backtests/baselines-real-2026-07-31.md`, corrida `f7af767ca7e6`: 2.189 productos × 18 cortes × h=12 en 214 min con `n_jobs=4`. **Gate de M1 cumplido.** WAPE 0,32/0,15/0,12 (producto/categoría/total, h=1) y **sesgo total −1,4%, que ya cumple el ±5% de M2** — el −10% del sintético era un artefacto del generador. Cobertura < 1 explicada y diagnosticada al 100%: altas de catálogo (§5.6) |
 | S4–S5 | — | Deuda del generador (precondición de M2.2, no bloquea M1) | T0.4 | ✅ 2026-07-31 (23 tests) |
-| S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | ⬜ |
+| S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | 🟡 M2.1 ✅ 2026-07-31 (67 tests) |
 | S7 | M2 | LightGBM global · cuantiles | M2.3–M2.4 | ⬜ |
 | S8 | M2 | **Champion/challenger vs piso** | M2.5 | ⬜ |
 | S9 | M3 | Reconciliación jerárquica | M3.1 | ⬜ |

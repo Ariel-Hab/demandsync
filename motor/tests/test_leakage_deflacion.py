@@ -224,3 +224,90 @@ def test_se_verifica_en_todos_los_cortes(datos):
         verificar_sin_leakage(
             ancla_con_leakage, datos, [ultimo - pd.DateOffset(months=6), corte_sin_futuro]
         )
+
+
+# ---------------------------------------------------------------------------------
+# El transformador de verdad (M2.1). Lo de arriba no se toca: queda como control
+# permanente de que la red sigue siendo capaz de detectar algo.
+# ---------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def datos_con_nivel():
+    """Ocho productos, 24 meses, y el 8 se retira en el mes 10.
+
+    No reusa el fixture `datos` de arriba a propósito: con tres productos y muestra mínima
+    3, la categoría se queda sin pares apenas uno se retira y el índice de nivel deja de
+    existir en el mes 10. La verificación de `indices_` pasaría sin haber comparado
+    prácticamente nada — se comprobó por mutación que en ese fixture sacar el recorte por
+    corte **no** hace fallar la variante `indices_`. Con ocho productos el índice de
+    categoría sobrevive a los tres cortes y la comparación es real.
+    """
+    meses = pd.date_range("2024-01-01", periods=24, freq="MS")
+    filas = [
+        {
+            "id_producto": p,
+            "anio_mes": m,
+            "unidades": float(10 + i),
+            "revenue": float((10 + i) * (100 + 5 * i) * p),
+            "precio_prom": float((100 + 5 * i) * p),
+        }
+        for p in range(1, 9)
+        for i, m in enumerate(meses)
+        if not (p == 8 and i >= 10)
+    ]
+    return pd.DataFrame(filas)
+
+
+@pytest.fixture
+def catalogo():
+    """Todos en la misma categoría y laboratorio, para que la corrida pase por los
+    peldaños de la cascada y no solo por el ancla propia."""
+    return pd.DataFrame(
+        {
+            "id_producto": list(range(1, 9)),
+            "categoria": ["CLINICO"] * 8,
+            "laboratorio": ["L1"] * 8,
+        }
+    )
+
+
+@pytest.mark.parametrize("salida", ["ancla_", "indices_", "deflactor_"])
+def test_el_transformador_de_m2_1_no_filtra_futuro(datos_con_nivel, cortes, catalogo, salida):
+    """Las tres salidas se verifican por separado.
+
+    No alcanza con el ancla: el índice encadenado es donde vive la trampa más sutil
+    —normalizar la base en el último mes haría que todo el pasado se recalcule con cada
+    corte— y el deflactor es el que efectivamente multiplica los montos.
+    """
+    from motor.deflacion import TransformadorDeflacion
+
+    verificar_sin_leakage(
+        lambda d, c: getattr(
+            TransformadorDeflacion(catalogo=catalogo).ajustar(d, c), salida
+        ),
+        datos=datos_con_nivel,
+        cortes=cortes,
+    )
+
+
+def test_la_verificacion_de_arriba_ejercita_el_fallback_y_el_indice_de_nivel(
+    datos_con_nivel, cortes, catalogo
+):
+    """Comprueba que el test anterior tenga de qué agarrarse.
+
+    Dos formas de que aquella verificación pase sin probar nada: que todos los productos
+    resuelvan por ancla directa —y entonces la rama del fallback, la que el docstring de
+    `leakage.py` señala como el caso realista, no se corra nunca— o que el índice de
+    categoría esté vacío y comparar `indices_` sea comparar el IPC contra sí mismo.
+    """
+    from motor.deflacion import TransformadorDeflacion
+
+    ajustado = TransformadorDeflacion(catalogo=catalogo).ajustar(datos_con_nivel, cortes[-1])
+
+    assert ajustado.origen_ancla_[8] not in ("producto", "sin_ancla"), "el 8 usa el fallback"
+
+    indice_categoria = ajustado.indices_[ajustado.indices_["nivel"] == "categoria"]
+    assert indice_categoria["anio_mes"].max() == cortes[-1], (
+        "el indice de categoria tiene que llegar hasta el corte, no morirse antes"
+    )
