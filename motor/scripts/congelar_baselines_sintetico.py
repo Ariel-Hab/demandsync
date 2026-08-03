@@ -274,11 +274,14 @@ def _nota_de_cobertura(tablas: dict[str, pd.DataFrame] | None) -> list[str]:
     return [
         "",
         f"> ⚠️ **La cobertura NO es 1,0: baja hasta {minima:.4f} a h={int(peor['horizonte'])} "
-        "(grano producto).** Son filas con valor real pero sin predicción de ningún "
-        "candidato, y **bajan el WAPE de la tabla porque omiten series, no porque el "
+        "(grano producto).** Son filas con valor real y **sin predicción del modelo "
+        "seleccionado**, y **bajan el WAPE de la tabla porque omiten series, no porque el "
         "método acierte más**. Antes de usar esta tabla como piso hay que explicar de "
         "dónde salen esas filas — `backtests/README.md` §Qué tiene que traer cada tabla, "
-        "condición 4.",
+        "condición 4. **Ojo al diagnosticarlas:** que el modelo seleccionado no haya "
+        "predicho NO implica que ningún candidato pudiera. Contar solo las filas donde "
+        "ninguno predijo subestima la brecha y da un falso 100% explicado — pasó con la "
+        "tabla del 2026-07-31 (ver `roadmap-motor.md` §5.6.1).",
     ]
 
 

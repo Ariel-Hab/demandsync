@@ -43,6 +43,27 @@ def test_avisa_cuando_la_cobertura_baja_de_uno():
     assert "omiten series" in texto
 
 
+def test_la_nota_no_afirma_que_ningun_candidato_predijo():
+    """La redacción vieja decía "sin predicción de ningún candidato" y eso hizo perder el
+    gate una vez.
+
+    En la corrida del 2026-07-31 el diagnóstico contó solo las filas donde **ninguno** de
+    los 7 candidatos predijo (13.889) y concluyó "100% explicado por altas de catálogo",
+    cuando la columna `cobertura` cuenta las que le faltan al **modelo seleccionado**
+    (20.174). El 31% restante son series jóvenes donde el ganador retrospectivo no llegaba
+    al horizonte y otros 5-6 candidatos sí predijeron. La nota no puede afirmar una causa
+    que el script no puede saber. Ver `roadmap-motor.md` §5.6.1.
+    """
+    texto = "\n".join(congelar._nota_de_cobertura(_por_horizonte([0.99, 0.96, 0.92, 0.88])))
+
+    # La frase exacta que afirmaba la causa falsa. No alcanza con buscar "ningún
+    # candidato": la redacción nueva lo menciona justamente para desmentirlo.
+    assert "sin predicción de ningún candidato" not in texto
+    assert "modelo seleccionado" in texto
+    # Y tiene que advertir activamente contra ese error de conteo, no solo evitarlo.
+    assert "falso 100%" in texto
+
+
 def test_no_explota_si_falta_la_tabla_o_la_columna():
     assert congelar._nota_de_cobertura(None) == []
     assert congelar._nota_de_cobertura({}) == []

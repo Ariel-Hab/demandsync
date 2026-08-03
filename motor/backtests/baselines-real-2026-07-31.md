@@ -1,5 +1,17 @@
 # Piso de baselines — real (2026-07-31)
 
+> 🛑 **SUPERADA — y su nota de cobertura tiene un error.** El piso vigente es
+> `baselines-real-2026-08-03.md` (corrida `a79a9b23676b`): esta tabla midió sobre un universo
+> con obsequios y con 2026-06 al 32% de carga (ADR-012, M1.8b). **Errata, agregada el
+> 2026-08-03:** donde la nota de abajo dice "el 100,00% de las 13.889 filas sin predicción",
+> el total real de filas sin predicción del modelo seleccionado —lo que mide la columna
+> `cobertura`— es **20.174 (6,41%)**, no 13.889 (4,41%). Las 13.889 son solo las filas donde
+> **ningún** candidato predijo. Las **6.285 restantes (31,15%)** son series jóvenes cuyo
+> ganador retrospectivo no llegaba al horizonte pedido, y ahí otros candidatos sí predijeron;
+> el "cero filas sin explicar" es falso. **No se corrigió ningún número de las tablas** —
+> siguen siendo el registro auditable de la corrida `f7af767ca7e6`. Diagnóstico completo en
+> `roadmap-motor.md` §5.6.1 y en la nota del piso vigente.
+
 Selección por serie (M1.7) entre 7 candidatos: `SeasonalNaive`, `WindowAverage`, `AutoETS`, `AutoTheta`, `AutoARIMA`, `CrostonSBA`, `TSB`.
 
 - **Productos:** 2189 · **cortes:** 18 · **horizonte:** 12 · **n_jobs:** 4

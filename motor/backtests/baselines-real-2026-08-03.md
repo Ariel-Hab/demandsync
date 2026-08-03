@@ -7,34 +7,66 @@ Selección por serie (M1.7) entre 7 candidatos: `SeasonalNaive`, `WindowAverage`
 - **Series con ganador asignado:** 2106
 
 > ⚠️ **La cobertura NO es 1,0 a grano producto: baja de 0,9920 (h=1) a 0,8880 (h=12).**
-> Son filas con valor real y **sin predicción de ningún candidato**, así que el WAPE de
+> Son filas con valor real y **sin predicción del modelo seleccionado**, así que el WAPE de
 > esta tabla está mejorado por omitir series, no por acertar más. Condición 4 de
-> `backtests/README.md`; la causa se diagnosticó antes de congelar y es la de abajo.
+> `backtests/README.md`; la causa se diagnosticó antes de congelar y son **dos**, no una.
 >
-> **Causa: altas de catálogo.** El **100,00%** de las 12.700 filas sin predicción (4,16%
-> del reporte crudo de 305.309 filas) son productos cuya **primera venta es posterior al
-> corte** — 262 series, de 275 productos que entraron al catálogo desde 2024-11. Cero
-> filas sin explicar, cero bajas. Un baseline univariado no puede predecir una serie que
-> todavía no existía en el corte: el arnés registra el real (densificado, ADR-010) y
-> ninguna predicción, y la cobertura lo hace visible en vez de taparlo. **No es un
-> defecto de la corrida.**
+> **Son 18.355 filas — 6,01% del reporte de 305.309 — y se explican al 100%, en dos
+> componentes con consecuencias distintas.**
 >
-> De ahí salen también las **22 series sin ganador** (2.106 de 2.128): son productos cuya
-> primera venta cae después del último corte, así que ningún candidato llegó a predecirlas
-> nunca.
+> **(1) Altas de catálogo — 12.700 filas (69,19%), 262 productos.** Su primera venta es
+> **posterior al corte**: la serie no existía todavía y **ningún** candidato predijo
+> (historia 0). Un baseline univariado no puede predecir una serie que no existía; el arnés
+> registra el real (densificado, ADR-010) y ninguna predicción, y la cobertura lo hace
+> visible en vez de taparlo. **No es un defecto de la corrida.** De acá salen también las
+> **22 series sin ganador** (2.106 de 2.128): las 22 tienen su primera venta en 2026-05,
+> posterior al último corte, así que ningún candidato llegó a predecirlas nunca. Y acá está
+> el `SIN CATEGORIA` a **0,4953** de cobertura a h=12: **221 de esos 262 productos (84,4%)
+> no tienen categoría asignada todavía**. Leer esa fila como "la categoría se predice mal"
+> sería un error — la mitad de sus filas no se predijo en absoluto.
 >
-> Por eso `SIN CATEGORIA` cae a **0,4953** a h=12: **226 de esos 275 productos nuevos
-> (82,2%) no tienen categoría asignada todavía**. Leer esa fila como "la categoría se
-> predice mal" sería un error — la mitad de sus filas no se predijo en absoluto.
+> **(2) Horizonte truncado por historia corta — 5.655 filas (30,81%), 241 productos.** Acá
+> la serie **sí existía** al corte, con 1 a 11 meses de historia (mediana 2), y **otros 5 o
+> 6 candidatos sí predijeron**: el que no llegó fue el ganador retrospectivo de esa serie —
+> `SeasonalNaive` (5.355 filas) o `WindowAverage` (300). El mecanismo es exacto y está
+> verificado: **el naive estacional solo proyecta tantos meses como historia tiene**, así
+> que en el **100%** de sus 5.355 filas se cumple `horizonte > meses de historia`. Las 38
+> filas de `WindowAverage` que no siguen esa regla son series más cortas que su propia
+> ventana, que no devuelve nada ni a h=1. Por eso la cobertura **cae con el horizonte**:
+> este componente aporta 25 filas a h=1 y 682 a h=6.
 >
-> **Consecuencia para M2:** los productos nuevos son el caso de mayor incertidumbre y
-> **ningún baseline los cubre**. Es un hueco que el modelo global sí podría llenar con
-> features de categoría/laboratorio (arranque en frío). Comparar M2 contra este piso a
-> igual cobertura, o la comparación no es justa en ninguna de las dos direcciones.
+> **La distinción es la que importa para M2.5.** El componente (1) es un hueco genuino de
+> arranque en frío que **ningún baseline puede llenar** — es donde el modelo global podría
+> ganar con features de categoría/laboratorio. El componente (2) es **reparable dentro de
+> los propios baselines**: un pipeline prospectivo que en cada corte eligiera un modelo
+> capaz de cubrir el horizonte no tendría esa brecha. O sea que parte de la cobertura que
+> le falta a este piso es un artefacto de la selección retrospectiva (ver la nota de más
+> abajo), no un límite de los baselines.
 >
-> Esta nota se agregó a mano tras el diagnóstico. El script ya emite la advertencia
-> genérica de cobertura por su cuenta (`_nota_de_cobertura`), pero la causa concreta no
-> la puede deducir solo.
+> **Cuánto lo favorece la omisión, medido:** rellenando con `WindowAverage` las filas del
+> componente (2) donde está disponible (2.613 de 5.655; 0,71% de las unidades), el WAPE
+> **empeora** a h=6 de 0,3114 → **0,3174** (+0,0060) y a h=12 de 0,3034 → **0,3070**
+> (+0,0036); h=1 y h=3 no se mueven porque ahí casi no hay filas del componente (2). Es una
+> cota ilustrativa, no el WAPE de un pipeline prospectivo. **M2.5 tiene que comparar a igual
+> cobertura**, o la comparación no es justa en ninguna de las dos direcciones.
+>
+> Esta nota se agregó a mano tras el diagnóstico; el script solo emite la advertencia
+> genérica (`_nota_de_cobertura`). **Corrige a la tabla del 2026-07-31**, que declaraba
+> "100% altas de catálogo, cero filas sin explicar": ese conteo tomó solo las filas donde
+> **ningún** candidato predijo (13.889) y no las que le faltan al **modelo seleccionado**
+> (20.174), que es lo que mide la columna `cobertura`. El componente (2) ya estaba ahí
+> —6.285 filas, 31,15%— y pasó inadvertido. La redacción de la advertencia genérica
+> ("sin predicción de ningún candidato") empujaba a ese conteo y se corrigió. Ver
+> `roadmap-motor.md` §5.6.1.
+
+> ⚠️ **El gate de sesgo de M2 (±5% a nivel total) este piso NO lo cumple en horizonte
+> largo:** −3,4% (h=1) y −2,6% (h=3) entran, pero **−5,2% (h=6) y −6,0% (h=12) quedan
+> afuera**. Los baselines sub-pronostican sistemáticamente a horizonte largo, así que el
+> modelo global de M2 tiene que **corregir** ese sesgo, no solo empatar el WAPE. El −1,4%
+> que reportó la corrida del 2026-07-31 no era mejor: salía de evaluar 1 de los 7 pares de
+> h=12 contra un mes cargado al 32%, lo que achica `real` y corre `pred − real` hacia
+> arriba. Con el relleno del componente (2) el h=6 entra al ±5% (−4,6%) pero el h=12 sigue
+> afuera (−5,3%): el incumplimiento a h=12 no es un efecto de la cobertura.
 
 > **Este piso reemplaza a `baselines-real-2026-07-31.md`** (corrida `f7af767ca7e6`), que
 > midió sobre un universo con obsequios y con 2026-06 al 32% de carga (ADR-012, M1.8b).

@@ -381,6 +381,13 @@ y la cobertura lo expone. **`SIN CATEGORIA` cae a 0,52 a h=12** porque 252 de es
 productos nuevos aún no están clasificados — leer esa fila como "se predice mal" sería un
 error.
 
+> ❌ **El "100,00%" y el "cero filas sin explicar" son falsos; §5.6.1 punto 5 lo mide.** Las
+> 13.889 filas son solo aquellas donde **ningún** candidato predijo, pero la columna
+> `cobertura` cuenta las que le faltan al **modelo seleccionado**: **20.174 (6,41%)**. Las
+> **6.285 restantes (31,15%)** son series jóvenes cuyo ganador retrospectivo no llegaba al
+> horizonte pedido, con otros candidatos que sí predijeron. Lo que sigue valiendo es que las
+> altas de catálogo son el componente mayoritario (69%) y que ningún baseline las cubre.
+
 > **Es el caso que T0.4 #3 anticipó y el sintético no puede producir**: cero altas dentro
 > de la ventana contra 301 reales. La deuda del generador dejó de ser teórica.
 
@@ -465,13 +472,54 @@ sub-pronostican sistemáticamente en horizonte largo y el global tiene que corre
 solo empatar el WAPE. Esto no cambia el gate de M1 —que pide una tabla congelada, no que
 los baselines cumplan el gate de M2— pero sí borra la tranquilidad que dejó §5.6.
 
-**4. Lo que se replicó sin cambios.** La cobertura vuelve a bajar (0,9920 → 0,8880) y otra
-vez el **100,00%** de las 12.700 filas sin predicción son altas de catálogo: 262 series de
-275 productos nuevos, cero sin explicar. `SIN CATEGORIA` cae a 0,4953 a h=12 porque **226
-de esos 275 (82,2%) no tienen categoría**. Y ningún candidato domina: el más ganador
+**4. Lo que se replicó sin cambios.** Ningún candidato domina: el más ganador
 (`SeasonalNaive`) baja de 678 a **481 de 2.106 series (23%)**, y **`CrostonSBA` vuelve a
 ganar mucho más en `suave` (315) que en `lumpy` (20)**. Tercera medición del mismo
 hallazgo contraintuitivo de §5.3 — no enrutar por cuadrante sin volver a medirlo.
+
+**5. La cobertura tiene DOS causas, no una, y la de §5.6 estaba mal contada.** La cobertura
+vuelve a bajar (0,9920 → 0,8880) pero el diagnóstico anterior —"el 100% son altas de
+catálogo, cero filas sin explicar"— **era un artefacto del denominador**. Contaba las filas
+donde **ningún** candidato predijo; la columna `cobertura` mide las que le faltan al
+**modelo seleccionado**, que son más:
+
+| corrida | sin pred. del seleccionado | altas de catálogo | horizonte truncado |
+|---|---|---|---|
+| `f7af767ca7e6` (2026-07-31) | 20.174 (6,41%) — se reportaron 13.889 | 13.889 (68,85%) | **6.285 (31,15%)** |
+| `a79a9b23676b` (2026-08-03) | 18.355 (6,01%) | 12.700 (69,19%) | **5.655 (30,81%)** |
+
+- **Altas de catálogo (69%)**: primera venta posterior al corte, historia 0, ningún
+  candidato puede predecir. 262 productos; **221 de ellos (84,4%) son `SIN CATEGORIA`**, y
+  eso es lo que hunde esa fila a 0,4953 de cobertura a h=12. Las **22 series sin ganador**
+  (2.106 de 2.128) son el caso extremo: las 22 venden por primera vez en 2026-05, después
+  del último corte. *(Los "275 productos nuevos / 226 sin categoría" que circularon son
+  incorrectos: con el borde estricto son 262 y 221; con `>= 2024-11`, 274 y 231.)*
+- **Horizonte truncado por historia corta (31%)**: 5.655 filas de 241 productos que **sí
+  existían** al corte, con 1 a 11 meses de historia (mediana 2). Ahí otros 5 o 6 candidatos
+  predijeron y el que no llegó fue el ganador retrospectivo: `SeasonalNaive` (5.355) o
+  `WindowAverage` (300). **El naive estacional solo proyecta tantos meses como historia
+  tiene** — en el **100%** de sus 5.355 filas se cumple `horizonte > meses de historia`; las
+  38 de `WindowAverage` que no la cumplen son series más cortas que su propia ventana. Es lo
+  que explica que la cobertura **caiga con el horizonte**: 25 filas a h=1, 682 a h=6.
+
+**Por qué la distinción decide M2.5.** El primer componente es arranque en frío genuino: un
+hueco que **ningún baseline puede llenar** y donde el global podría ganar con features de
+categoría/laboratorio. El segundo es **reparable dentro de los baselines** — un pipeline
+prospectivo que eligiera en cada corte un modelo capaz de cubrir el horizonte no tendría esa
+brecha. O sea que **un tercio de la cobertura que le falta al piso es artefacto de la
+selección retrospectiva de §12.5**, no un límite de los baselines, y comparar contra el piso
+a valor nominal lo favorece. Medido: rellenando con `WindowAverage` donde está disponible
+(2.613 de 5.655 filas; 0,71% de las unidades) el WAPE producto **empeora** +0,0060 a h=6 y
++0,0036 a h=12, y el sesgo total mejora a −0,0464 (h=6, entra al ±5%) y −0,0530 (h=12, sigue
+afuera). O sea que **el incumplimiento del gate de sesgo a h=12 no es un efecto de la
+cobertura**, pero el de h=6 sí es de borde.
+
+**Lección de método:** la advertencia genérica que emite el script decía "sin predicción de
+ningún candidato" —una causa que el script no puede conocer— y eso guió el conteo equivocado
+las dos veces. Se corrigió la redacción y quedó un test que falla con la vieja
+(`test_scripts_congelar.py::test_la_nota_no_afirma_que_ningun_candidato_predijo`). Vale como
+caso general: **una plantilla que afirma una causa la instala**, aunque el dato no la
+respalde.
 
 **Lección de método, que es la misma de siempre en otra forma:** el piso viejo no estaba
 mal por un error de código, sino porque **un mes de datos entró incompleto y nada avisaba**.
@@ -714,7 +762,7 @@ nada, y también eso salió de la mutación.
 | S3 | M1 | Selección por serie · tabla sintética | M1.7 | ✅ 2026-07-30 — `modelado/seleccion.py` (los 7 candidatos en un solo pase, ganador por MASE, `resumen_de_ganadores`) + `scripts/congelar_baselines_sintetico.py`. Tabla congelada: `backtests/baselines-sintetico-2026-07-30.md` (corrida `f993bc6ae12e`, 400 productos estratificados según §5.2, 18 cortes, cobertura 1,0). **Hallazgo en §5.3:** los 7 ganan alguna serie y Croston gana más en `suave` que en `lumpy` — el enrutamiento por cuadrante habría sido peor. **108 tests verdes**, `ruff` limpio |
 | S3 | M1 | Checkpointing del arnés (precondición de M1.8) | M1.7a | ✅ 2026-07-29 — `ejecutar_backtest(directorio_checkpoint=...)`: un parquet por corte, reanudación que solo predice lo que falta, y **guarda por `id` de corrida** que rechaza reanudar con otra configuración o con otros datos en vez de mezclar checkpoints ajenos. 6 tests |
 | S4 | M1 | Extract del snap (precondición de M1.8) | M1.8a | ✅ 2026-07-31 — `motor/scripts/extraer_snap.py` **ejecutado**: 137.399 filas, 2.189 series, 96 meses sin huecos, 12 categorías, cross-check en verde y **2.189 productos activos, el número exacto del EDA**. SQL derivada de la que cotizaciones ya corre en producción con tres diferencias deliberadas (§5.4). Cinco hallazgos en §5.5, dos de ellos del esquema real que **también afectan al ETL de R1** (`producto.id` es varchar con colisiones; `nota_credito` es BIT) → pendiente del Analista en `planning/roadmap.md`. **32 tests**; los tres de regresión verificados fallando sin su arreglo |
-| S4 | M1 | **Piso real congelado** (máquina autorizada) | M1.8 | ✅ **2026-08-03 — re-congelado** (§5.6.1): `backtests/baselines-real-2026-08-03.md`, corrida `a79a9b23676b`, 2.128 productos × 18 cortes (2024-11..2026-04) × h=12 en 294 min con `n_jobs=4` sobre `C:/dfv-extract-v2`. WAPE **0,287 / 0,128 / 0,103** (producto/categoría/total, h=1). Cobertura < 1 diagnosticada al 100%: altas de catálogo. **Descompuesto contra la corrida anterior** reusando los checkpoints de ambas: el filtro de obsequios de ADR-012 **no movió el piso** (0,2939 → 0,2933), lo movía **el mes incompleto**; y al sacarlo se destapa un **sesgo total de −5,2% a h=6 y −6,0% a h=12, fuera del ±5% de M2** — el −1,4% de la corrida vieja era artefacto. La primera corrida (`f7af767ca7e6`, 2026-07-31) queda como registro histórico, no como referencia |
+| S4 | M1 | **Piso real congelado** (máquina autorizada) | M1.8 | ✅ **2026-08-03 — re-congelado** (§5.6.1): `backtests/baselines-real-2026-08-03.md`, corrida `a79a9b23676b`, 2.128 productos × 18 cortes (2024-11..2026-04) × h=12 en 294 min con `n_jobs=4` sobre `C:/dfv-extract-v2`. WAPE **0,287 / 0,128 / 0,103** (producto/categoría/total, h=1). Cobertura < 1 explicada al 100% en **dos** componentes (§5.6.1 punto 5): 69% altas de catálogo + **31% horizonte truncado por historia corta**, que es artefacto de la selección retrospectiva y corrige el "100% altas" que se reportó en §5.6. **Descompuesto contra la corrida anterior** reusando los checkpoints de ambas: el filtro de obsequios de ADR-012 **no movió el piso** (0,2939 → 0,2933), lo movía **el mes incompleto**; y al sacarlo se destapa un **sesgo total de −5,2% a h=6 y −6,0% a h=12, fuera del ±5% de M2** — el −1,4% de la corrida vieja era artefacto. La primera corrida (`f7af767ca7e6`, 2026-07-31) queda como registro histórico, no como referencia |
 | S4 | M1 | **Regla de universo: obsequios y descontinuados** (corrección de M1.8a) | M1.8b | ✅ 2026-08-02 — **ADR-012**. `UMBRAL_PRECIO_OBSEQUIO = 0,05` a nivel renglón + `detectar_meses_incompletos()` contra la réplica atrasada. Universo 2.189 → **2.128**, extract 137.399 → **135.409** filas. **248 tests**, `ruff` limpio; los 9 nuevos verificados por mutación. **Deja al piso de M1.8 pendiente de re-congelar** (§5.5.1) |
 | S4–S5 | — | Deuda del generador (precondición de M2.2, no bloquea M1) | T0.4 | ✅ 2026-07-31 (23 tests) |
 | S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | 🟡 M2.1 ✅ 2026-07-31 (67 tests) |
@@ -779,7 +827,7 @@ M2.2**, así que su distribución importa igual que las otras tres.
 |---|---|---|
 | 1 | **`cliente_feature` es una foto única** — verificado: una sola `fecha_calculo` (2026-06) para las 1.600 filas | **M2.2 la usa como feature.** Un predictor que la consuma en un corte de 2024 estaría viendo el futuro. El arnés ya tiene el hook (`tablas_auxiliares`) pero no hay nada que recortar: el generador tiene que emitir una versión por mes. Hoy la única defensa es que ningún predictor la usa todavía |
 | 2 | **Ningún mes con unidades netas negativas** — verificado: 0 filas con `unidades < 0` en las dos tablas de hechos | El ~9,5% de notas de crédito existe solo en el JSON del contrato; al agregar por mes el neto siempre queda positivo. En la realidad un mes puede cerrar negativo (más devoluciones que ventas), y ni el motor ni el ETL de R1 lo ejercitan nunca |
-| 3 | **No modela altas ni bajas de producto** — verificado: **0 de 2.300 productos** tienen su primera venta dentro de la ventana de clasificación de 36 meses; la última primera-venta del dataset es de 2020 | La regla de calendario de **ADR-010** (arrancar en la primera venta de la serie) **no la ejercita ningún dato a escala**, solo tests unitarios. En datos reales los productos nuevos existen y son los de mayor incertidumbre. Un ADR-010 mal implementado pasaría toda validación sintética — de hecho pasó: el bug de la clave de `groupby` de M1.4 no lo detectó el sintético. **M1.8 lo ascendió de teórico a urgente**: el 100% de la cobertura faltante del piso real son altas de catálogo (§5.6) |
+| 3 | **No modela altas ni bajas de producto** — verificado: **0 de 2.300 productos** tienen su primera venta dentro de la ventana de clasificación de 36 meses; la última primera-venta del dataset es de 2020 | La regla de calendario de **ADR-010** (arrancar en la primera venta de la serie) **no la ejercita ningún dato a escala**, solo tests unitarios. En datos reales los productos nuevos existen y son los de mayor incertidumbre. Un ADR-010 mal implementado pasaría toda validación sintética — de hecho pasó: el bug de la clave de `groupby` de M1.4 no lo detectó el sintético. **M1.8 lo ascendió de teórico a urgente**: el **69%** de la cobertura faltante del piso real son altas de catálogo, y el 31% restante son series con historia demasiado corta para el modelo — o sea que el fenómeno es todavía más amplio que "altas" (§5.6.1 punto 5) |
 | 4 | **Las 8 categorías no existen** — `parametros.py:63` inventa `antiparasitarios`, `vacunas`, … y `catalogo.py:15` las reparte **uniforme** | Hasta M1 daba igual (la categoría sale del extract y solo desagrega el reporte). **En M2.2 pasa a ser feature.** Las 12 reales tienen distribución brutalmente despareja (`CLINICO` 723 contra `ACCESORIO` 19) e incluyen un bucket **`SIN CATEGORIA` del 22,4%** que no es un error de datos sino una realidad del catálogo: un quinto de los productos no tiene etiqueta, y el sintético le da categoría al 100%. Un `rng.choice` uniforme tampoco puede producir una categoría con **un solo producto** |
 
 **Objetivos de calibración, medidos sobre el extract real (2026-07-31)** — sin esto el
@@ -970,6 +1018,23 @@ un procedimiento prospectivo: la selección en hindsight le regala al baseline u
 privilegio que el modelo global de M2 no tendría. Si M2.5 compara el global (medido
 prospectivamente) contra este piso (medido con hindsight), la comparación castiga al
 global y el gate de M2 podría rechazar un modelo que en realidad es mejor.
+
+**Actualización 2026-08-03: el costo dejó de ser cualitativo y tiene un segundo efecto que
+no se había previsto — se paga en cobertura.** Al diagnosticar la cobertura del piso nuevo
+(§5.6.1 punto 5) apareció que **5.655 filas, el 31% de las que no tienen predicción**, son
+series jóvenes donde el ganador retrospectivo **no podía cubrir el horizonte pedido** aunque
+otros 5 o 6 candidatos sí predijeron: `SeasonalNaive` gana la serie mirando todos los cortes
+y después se aplica a los cortes donde tenía 2 meses de historia, y el naive estacional solo
+proyecta tantos meses como historia tiene. Un procedimiento prospectivo no elegiría ese
+modelo en ese corte. O sea que el hindsight no solo **infla el WAPE del piso**: además le
+**baja la cobertura**, y como las filas que se caen son las de series nuevas —las más
+difíciles— eso le mejora el WAPE otra vez, por omisión. Medido, rellenar esas filas empeora
+el WAPE producto +0,0060 a h=6 y +0,0036 a h=12.
+
+Esto refuerza la decisión de abajo y descarta media opción: **"darle al global el mismo
+trato retrospectivo" ya no alcanza**, porque el trato retrospectivo no es solo un criterio
+de selección más laxo, es una fuente de filas sin predicción. Nivelar hacia el lado
+prospectivo es la única variante que hace las dos tablas comparables fila a fila.
 
 **Decisión pendiente (antes de M2.5, no bloquea M1.7/M1.8):** o se agrega una variante
 prospectiva de la selección (elegir el método en cada corte con los cortes anteriores) y
