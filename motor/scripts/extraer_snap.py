@@ -54,19 +54,83 @@ RAIZ_REPO = Path(__file__).resolve().parents[2]
 # enterarse en dos minutos y no después de ocho horas de backtest.
 EDA_PRIMER_MES = "2018-07"
 EDA_PRODUCTOS_ACTIVOS_36M = 2189
+"""Productos activos que midió el EDA. **Ese conteo incluye obsequios**, que ADR-012 pasó a
+descartar, así que desde 2026-08-02 este control ya no es comparación equivalente: se espera
+caer un poco por debajo (2.128 medidos, −2,8%). Se conserva el número del EDA en vez de
+pisarlo con el nuevo porque su valor es la trazabilidad contra M0 — el día que el extract
+devuelva 2.189 de nuevo, algo se rompió. La tolerancia del ±10% lo absorbe con holgura."""
 EDA_CATEGORIAS = 12
 TOLERANCIA_PRODUCTOS = 0.10
+
+FRACCION_MINIMA_MES_COMPLETO = 0.5
+"""Piso de unidades de un mes contra la mediana móvil de los 12 previos.
+
+Existe porque **"último mes completo" es una propiedad del calendario, no de los datos**:
+el script excluye el mes en curso, pero eso no garantiza que la réplica del snap haya
+terminado de cargar el anterior. Verificado el 2026-08-02: la réplica tenía facturas
+hasta el 17-07 pero solo 6.410 en 2026-06 contra ~14.000 típicas, y 1 en 2026-07.
+
+Un mes a medio cargar no falla, y es de lo peor que puede pasar: se lee como un derrumbe
+de demanda, entra al ancla de deflación —que mira los últimos 3 meses (ADR-002)— y es
+justo el mes contra el que se evalúa el último corte del backtest.
+
+Se mide en **unidades y no en filas ni revenue**: las filas casi no se mueven (2026-06
+dio 0,908, indistinguible de un mes sano) porque los mismos productos siguen apareciendo
+con menos transacciones cada uno, y el revenue arrastra inflación. Sobre los 91 meses del
+extract la distribución del ratio en unidades es p5 = 0,757 y **mínimo legítimo 0,614**
+(2022-06; junio es estacionalmente flojo: 0,61-0,81 todos los años). 2026-06 dio 0,321 y
+2026-07 dio 0,000. El corte en 0,5 separa ocho años de meses sanos de la réplica atrasada.
+"""
+
+UMBRAL_PRECIO_OBSEQUIO = 0.05
+"""Precio de renglón por debajo del cual la venta es un **obsequio**, no una venta.
+
+El ERP exige `precio > 0`, así que un obsequio no se puede facturar en cero: se carga
+con un centinela de $0,01. Medido sobre el snap (2026-08-02), desde 2018-07:
+
+| tramo de `precio` | renglones | unidades |
+|---|---|---|
+| `= 0` | 200.334 | 767.882 |
+| `(0, 0,05]` | 3.638 | 4.067 |
+| `(0,05, 1]` | 92 | 1.137 |
+| `> 1` | 5.228.654 | 25.422.764 |
+
+Los de precio 0 ya salían por el filtro viejo; los del centinela se colaban.
+
+**Por qué un umbral absoluto es válido acá, y solo acá.** En una economía con ×79 de
+inflación en la ventana, un piso en pesos normalmente no significa nada: $5 de 2018 no
+son $5 de 2026. Pero $0,01 **no es un precio, es un centinela**, y se comporta como
+tal: el tramo va de 0,01 a 0,05 en *todos* los años (2018: 0,01–0,02 · 2022: 0,01–0,04
+· 2026: 0,01–0,03), sin deriva inflacionaria. Y arriba queda un hueco casi vacío —entre
+$0,05 y $5 hay 5 a 90 renglones por año, en 1 a 9 productos— así que cualquier valor de
+ese hueco separa igual. 0,05 es donde termina la población centinela.
+
+**Por qué el corte va al renglón y no al producto.** `producto.obsequio` existe
+(`bit(1)`), pero marca una propiedad del producto y no cómo se facturó: de los 48
+marcados dentro del universo, **12 venden a precio real** (máximo, mediana $4.717) y los
+48 juntos cargan **0,92% del revenue** — excluirlos borraría ventas reales. Y al revés,
+22 productos que facturan siempre a $0,01 **no** están marcados. El flag sirve de
+contraste, no de filtro: 84% de los renglones que este umbral descarta caen en productos
+con `obsequio = 1`.
+"""
 
 # Filtros del ERP, idénticos a los de cotizaciones y a los que el EDA declara en su
 # encabezado. `estadistica ∈ {P,N}` son renglones que el propio sistema del cliente
 # excluye de estadística; el REGEXP descarta servicios y conceptos, cuyo código no es
-# numérico; `precio > 0` saca los renglones rotos.
-_FILTROS = """
-      {alias_cab}.fecha >= :desde
-      AND {alias_cab}.fecha <= :hasta
-      AND {alias_det}.producto_id REGEXP '^[0-9]+$'
-      AND COALESCE({alias_det}.estadistica, '') NOT IN ('P', 'N')
-      AND COALESCE({alias_det}.precio, 0) > 0
+# numérico; el umbral de precio saca los renglones rotos y los obsequios.
+#
+# **El REGEXP no descarta descontinuados**, aunque lo parezca: la convención del cliente
+# de prefijar con "." vive en `producto.descripcion`, no en `producto.id` (verificado:
+# 0 ids empiezan con ".", contra 460 descripciones). Esos productos entran igual, y para
+# excluirlos alcanza con `disabled` — los 73 que hay en el universo son subconjunto
+# exacto de los 313 `disabled`. Ver ADR-012: `disabled` no se aplica acá porque no tiene
+# fecha, y usarlo hacia atrás sería sesgo de supervivencia.
+_FILTROS = f"""
+      {{alias_cab}}.fecha >= :desde
+      AND {{alias_cab}}.fecha <= :hasta
+      AND {{alias_det}}.producto_id REGEXP '^[0-9]+$'
+      AND COALESCE({{alias_det}}.estadistica, '') NOT IN ('P', 'N')
+      AND COALESCE({{alias_det}}.precio, 0) > {UMBRAL_PRECIO_OBSEQUIO}
 """
 
 # Tres diferencias deliberadas contra la query de cotizaciones:
@@ -143,6 +207,23 @@ def _es_nota_credito(valor) -> bool:
     return bool(int(valor))
 
 
+def descartar_obsequios(renglones: pd.DataFrame) -> pd.DataFrame:
+    """Saca los renglones facturados por debajo de `UMBRAL_PRECIO_OBSEQUIO`.
+
+    Réplica en pandas del último filtro de `_FILTROS`, incluido el `COALESCE`: un
+    `precio` nulo cuenta como 0 y se descarta, igual que del lado SQL.
+
+    Que la regla esté escrita **dos veces a propósito** es lo que la pone bajo test sin
+    una base y, sobre todo, lo que hace que `--verificar-mes` la verifique: la SQL filtra
+    al traer y esta función filtra al netear, así que si alguien mueve una y no la otra,
+    el cross-check pandas vs SQL deja de cerrar. Es la misma red que atrapó el `BIT(1)`
+    de `nota_credito`.
+    """
+    df = renglones.copy()
+    precio = df["precio"].astype("float64").fillna(0)
+    return df[precio > UMBRAL_PRECIO_OBSEQUIO].reset_index(drop=True)
+
+
 def netear_renglones(renglones: pd.DataFrame) -> pd.DataFrame:
     """Neteo mensual por producto en pandas: la misma cuenta que hace `_SQL_HECHOS`.
 
@@ -153,7 +234,7 @@ def netear_renglones(renglones: pd.DataFrame) -> pd.DataFrame:
 
     Espera las columnas `fecha`, `nota_credito`, `producto_id`, `cantidad`, `precio`.
     """
-    df = renglones.copy()
+    df = descartar_obsequios(renglones)
     signo = df["nota_credito"].map(_es_nota_credito).map(lambda nc: -1 if nc else 1)
     df["unidades"] = signo * df["cantidad"].astype("float64")
     df["revenue"] = df["unidades"] * df["precio"].fillna(0).astype("float64")
@@ -240,6 +321,35 @@ def filtrar_universo(hechos: pd.DataFrame, meses_actividad: int) -> pd.DataFrame
     return hechos[hechos["id_producto"].isin(activos)].reset_index(drop=True)
 
 
+def detectar_meses_incompletos(
+    hechos: pd.DataFrame, fraccion: float = FRACCION_MINIMA_MES_COMPLETO
+) -> list[tuple[pd.Timestamp, float]]:
+    """Meses del final cuya carga de unidades no llega a `fraccion` de lo normal.
+
+    Solo mira la **cola**: un mes flojo en 2021 es historia y el modelo tiene que
+    aprenderlo, pero un mes flojo al final es casi siempre la réplica a medio cargar. Se
+    corta en el primer mes sano yendo hacia atrás, así que devuelve el tramo final malo.
+
+    Returns:
+        `(mes, ratio)` del más viejo al más nuevo. Vacío si la cola está sana.
+    """
+    por_mes = hechos.groupby("anio_mes")["unidades"].sum().sort_index()
+    if len(por_mes) < 7:
+        return []
+
+    referencia = por_mes.rolling(12, min_periods=6).median().shift(1)
+    sospechosos: list[tuple[pd.Timestamp, float]] = []
+    for mes in reversed(por_mes.index):
+        base = referencia.get(mes)
+        if base is None or pd.isna(base) or base <= 0:
+            break
+        ratio = float(por_mes[mes] / base)
+        if ratio >= fraccion:
+            break
+        sospechosos.append((mes, ratio))
+    return list(reversed(sospechosos))
+
+
 def validar_contra_eda(
     hechos: pd.DataFrame, catalogo: pd.DataFrame, meses_actividad: int
 ) -> list[tuple[bool, str, str]]:
@@ -269,6 +379,23 @@ def validar_contra_eda(
         (hechos["anio_mes"].max().to_period("M") - hechos["anio_mes"].min().to_period("M")).n + 1
     )
     controles.append((True, meses == esperados, f"meses sin huecos: {meses} de {esperados}"))
+
+    incompletos = detectar_meses_incompletos(hechos)
+    detalle = ", ".join(f"{m:%Y-%m} ({r:.0%})" for m, r in incompletos)
+    controles.append(
+        (
+            True,
+            not incompletos,
+            f"último mes con carga completa: {hechos['anio_mes'].max():%Y-%m}"
+            if not incompletos
+            else (
+                f"réplica atrasada — {len(incompletos)} mes(es) a medio cargar: {detalle} "
+                f"de lo normal. Re-extraé con `--hasta "
+                f"{(incompletos[0][0] - pd.DateOffset(months=1)):%Y-%m}` o esperá a que "
+                f"el snap se ponga al día"
+            ),
+        )
+    )
 
     n_categorias = catalogo["categoria"].nunique()
     controles.append(

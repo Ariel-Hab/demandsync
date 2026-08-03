@@ -9,6 +9,19 @@ pandas, que es la misma cuenta y la que `--verificar-mes` corre contra la SQL en
 corrida real, y (b) todo el post-procesamiento, que es donde vive el bug silencioso:
 un `precio_prom` infinito o un dtype que no matchea el diccionario no rompen nada,
 solo ensucian el piso.
+
+**El filtro de obsequios de ADR-012 vive en la SQL y no se testea directo.** Lo que lo
+cubre es que `descartar_obsequios` replica la misma regla en pandas y `--verificar-mes`
+compara las dos salidas: si alguien mueve una y no la otra, el cross-check deja de
+cerrar. Es la misma red que atrapó el `BIT(1)` de `nota_credito`.
+
+**Lo que la mutación acredita y lo que no.** Rompiendo `UMBRAL_PRECIO_OBSEQUIO` caen 6
+tests y rompiendo `FRACCION_MINIMA_MES_COMPLETO` caen 2. Los que afirman **ausencia**
+—que un precio real no se descarte, que un mes flojo del medio de la historia no cuente
+como réplica atrasada, que una baja estacional no dispare— siguen verdes con la mutación
+puesta, por construcción. No son decoración: son la red contra el falso positivo, o sea
+contra que alguien suba un umbral y empiece a borrar datos sanos. Pero a esos los
+acredita el caso inverso, no la mutación.
 """
 
 import importlib.util
@@ -131,6 +144,82 @@ def test_el_revenue_conserva_el_signo_negativo():
 
     assert salida.loc[0, "unidades"] == pytest.approx(-3.0)
     assert salida.loc[0, "revenue"] == pytest.approx(-300.0)
+
+
+# ---------------------------------------------------------------------------
+# descartar_obsequios — la regla de universo de ADR-012
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "precio, entra",
+    [
+        (0.01, False),  # el centinela: el ERP exige precio > 0, el obsequio va a 1 centavo
+        (0.05, False),  # borde del umbral, cerrado por abajo
+        (0.06, True),
+        (1.0, True),
+        (None, False),  # COALESCE(precio, 0) del lado SQL
+    ],
+)
+def test_el_umbral_de_obsequio_separa_centinela_de_precio_real(precio, entra):
+    renglones = pd.DataFrame([_renglon(1, "2025-03-05", cantidad=1, precio=precio)])
+
+    salida = extraer_snap.descartar_obsequios(renglones)
+
+    assert (len(salida) == 1) is entra
+
+
+def test_un_producto_que_solo_se_obsequia_desaparece_del_universo():
+    """Los 22 que facturan siempre a $0,01 y que el flag `obsequio` NO marca."""
+    renglones = pd.DataFrame(
+        [
+            _renglon(1, "2025-03-05", cantidad=3, precio=0.01),
+            _renglon(1, "2025-04-05", cantidad=2, precio=0.01),
+            _renglon(2, "2025-03-05", cantidad=1, precio=900.0),
+        ]
+    )
+
+    salida = extraer_snap.netear_renglones(renglones)
+
+    assert set(salida["producto_id"]) == {2}
+
+
+def test_un_producto_que_se_vende_y_ademas_se_obsequia_conserva_sus_ventas():
+    """Los 12 marcados `obsequio` que venden a precio real: se corta el renglón, no el
+    producto. Cortar por producto borraría 0,92% del revenue."""
+    renglones = pd.DataFrame(
+        [
+            _renglon(7, "2025-03-05", cantidad=4, precio=500.0),
+            _renglon(7, "2025-03-18", cantidad=2, precio=0.01),
+        ]
+    )
+
+    salida = extraer_snap.netear_renglones(renglones)
+
+    assert len(salida) == 1
+    assert salida.loc[0, "unidades"] == pytest.approx(4.0)
+    assert salida.loc[0, "revenue"] == pytest.approx(2000.0)
+
+
+def test_la_nota_de_credito_de_un_obsequio_tampoco_entra():
+    """Si el obsequio no suma, su devolución no puede restar: dejaría unidades negativas
+    sin venta que las compense, y eso es un mes de neto negativo inventado."""
+    renglones = pd.DataFrame(
+        [
+            _renglon(1, "2025-03-05", cantidad=5, precio=800.0),
+            _renglon(1, "2025-03-20", cantidad=2, precio=0.01, nota_credito=1),
+        ]
+    )
+
+    salida = extraer_snap.netear_renglones(renglones)
+
+    assert salida.loc[0, "unidades"] == pytest.approx(5.0)
+
+
+def test_el_umbral_esta_en_el_hueco_vacio_entre_el_centinela_y_los_precios_reales():
+    """Medido sobre el snap: el centinela llega hasta $0,05 en los nueve años y entre
+    $0,05 y $5 hay 5-90 renglones por año. El umbral tiene que caer en ese hueco."""
+    assert 0.05 <= extraer_snap.UMBRAL_PRECIO_OBSEQUIO < 5.0
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +384,58 @@ def test_es_fatal_que_la_historia_no_arranque_donde_dice_el_eda():
 
     fatal, estado = controles["primer mes"]
     assert fatal and estado == "FALLA"
+
+
+def _serie_mensual(valores, desde="2019-01"):
+    meses = pd.date_range(desde, periods=len(valores), freq="MS")
+    return pd.DataFrame(
+        {
+            "id_producto": 1,
+            "anio_mes": meses,
+            "unidades": [float(v) for v in valores],
+            "revenue": [float(v) * 100 for v in valores],
+            "precio_prom": 100.0,
+        }
+    )
+
+
+def test_detecta_la_replica_atrasada_al_final_de_la_serie():
+    """El caso real del 2026-08-02: la réplica tenía 2026-06 a medio cargar y 2026-07 con
+    un comprobante. Un mes así se lee como derrumbe de demanda y entra al ancla."""
+    hechos = _serie_mensual([100] * 24 + [32, 0])
+
+    incompletos = extraer_snap.detectar_meses_incompletos(hechos)
+
+    assert [f"{m:%Y-%m}" for m, _ in incompletos] == ["2021-01", "2021-02"]
+
+
+def test_un_mes_flojo_en_el_medio_de_la_historia_no_es_replica_atrasada():
+    """Es demanda real y el modelo tiene que aprenderla; solo se mira la cola."""
+    hechos = _serie_mensual([100] * 12 + [20] + [100] * 12)
+
+    assert extraer_snap.detectar_meses_incompletos(hechos) == []
+
+
+def test_una_baja_estacional_dentro_de_lo_visto_no_dispara():
+    """Junio real llega a 0,61 de la mediana móvil sin estar incompleto."""
+    hechos = _serie_mensual([100] * 24 + [62])
+
+    assert extraer_snap.detectar_meses_incompletos(hechos) == []
+
+
+def test_la_replica_atrasada_es_fatal_y_dice_hasta_donde_re_extraer():
+    hechos = _serie_mensual([100] * 24 + [10])
+    catalogo = pd.DataFrame(
+        {"id_producto": [1], "categoria": ["C"], "laboratorio": ["L"], "activo": [True]}
+    )
+
+    fatales = [
+        texto
+        for fatal, estado, texto in extraer_snap.validar_contra_eda(hechos, catalogo, 36)
+        if fatal and estado == "FALLA"
+    ]
+
+    assert any("réplica atrasada" in t and "--hasta 2020-12" in t for t in fatales)
 
 
 def test_es_fatal_que_falten_categorias():

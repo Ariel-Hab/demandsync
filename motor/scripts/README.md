@@ -63,8 +63,32 @@ Un extract mal hecho no falla: produce un piso equivocado. Por eso hay dos redes
 |---|---|
 | `--salida` | Obligatorio. Directorio de los parquets, fuera del repo |
 | `--meses-actividad` | Ventana de "producto activo", default 36. Con `0` extrae las ~10.500 entradas del catálogo: cuadruplica el backtest y mete series todo-ceros que **bajan el WAPE sin que nadie prediga mejor** |
-| `--desde` / `--hasta` | Default 2018-07 → último mes **completo**. El mes en curso se excluye siempre: está contablemente abierto y su caída se leería como demanda real |
+| `--desde` / `--hasta` | Default 2018-07 → último mes **completo de calendario**. El mes en curso se excluye siempre: está contablemente abierto y su caída se leería como demanda real. **Ojo: completo de calendario ≠ completo de datos** — ver abajo |
 | `--verificar-mes` | Mes del cross-check. `ninguno` lo saltea (no lo saltees) |
+
+### La réplica se atrasa, y el default no lo sabe
+
+`--hasta` mira el calendario, no los datos. El 2026-08-02 la réplica del snap tenía
+facturas hasta el 17-07 pero solo **6.410 comprobantes en 2026-06 contra ~14.000
+típicos**. Un mes a medio cargar no falla: se lee como derrumbe de demanda, entra al ancla
+de deflación (que mira los últimos 3 meses) y es el mes contra el que se evalúa el último
+corte del backtest. El extract del 2026-07-31 se lo comió entero.
+
+`detectar_meses_incompletos()` lo corta —es control fatal— y te dice con qué `--hasta`
+re-extraer. Mide en **unidades**, no en filas ni revenue: las filas casi no se mueven
+(2026-06 dio 0,908 de lo normal) porque siguen apareciendo los mismos productos con menos
+transacciones, y el revenue arrastra inflación.
+
+### Universo: qué queda afuera y por qué (ADR-012)
+
+- **Obsequios**, por renglón: `precio > $0,05`. El ERP exige `precio > 0`, así que un
+  obsequio se factura con un centinela de $0,01 — 3.638 renglones desde 2018-07. **No se
+  corta por producto**: el flag `producto.obsequio` marca 48 en el universo que cargan
+  0,92% del revenue, y 12 de ellos venden a precio real.
+- **Descontinuados: no se excluyen.** `producto.disabled` es estado de hoy y no tiene
+  fecha, así que aplicarlo a cortes históricos sería sesgo de supervivencia. El "." de la
+  convención del cliente vive en `descripcion`, no en `id`, y es subconjunto exacto de
+  `disabled` — por eso no hay regla propia para él.
 
 ### De dónde sale la SQL, y qué NO se copió
 
