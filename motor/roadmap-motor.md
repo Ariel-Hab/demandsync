@@ -198,6 +198,8 @@ ambas definiciones de "venta mensual" ya está en la tabla de riesgos y se paga 
 | Categorías | **las 12 de `categoria_producto`**, incluidas `DESCARTABLES`, `ACCESORIO` y `SIN CATEGORIA` | Son productos que el cliente efectivamente vende. La segunda columna del listado del ERP es un `version` de fila, no un flag de negocio: no hay señal ahí para excluir nada |
 | Ventana | 2018-07 → último mes **completo** | El mes en curso está contablemente abierto; su caída se leería como demanda real |
 | Máquina | la autorizada (única con acceso a la réplica) | Se descartó correrlo en otra máquina. Vale entonces el `n_jobs=4` ya medido acá |
+| **Obsequios** (agregado 2026-08-02, **ADR-012**) | se descartan **por renglón**, `precio > $0,05` | El ERP exige `precio > 0`, así que un obsequio se factura con un centinela de $0,01: 3.638 renglones. **No se corta por producto:** el flag `producto.obsequio` marca 48 en el universo que cargan 0,92% del revenue, y 12 venden a precio real |
+| **Descontinuados** (agregado 2026-08-02, **ADR-012**) | **no se excluyen del backtest** | `disabled` es estado de hoy y no tiene fecha; aplicarlo hacia atrás es sesgo de supervivencia (184 productos vivos al corte 2024-12, 2,82% del revenue de esa ventana). Para el backtest rige el criterio empírico de §12.1; el flag es para la corrida productiva |
 
 **Dos redes contra un extract silenciosamente mal.** Un extract equivocado no falla:
 produce un piso equivocado. (1) Cross-check pandas vs SQL sobre un mes, activo por
@@ -266,6 +268,65 @@ completo del insumo de M2.1: **132.529 filas con precio implícito > 0, 4.848 Na
 `unidades == 0`, 22 con precio ≤ 0**. Son 0,016%, pero **un ancla de precio negativa
 propagada por el fallback categoría → laboratorio contamina bastante más que 22 filas**:
 es un caso concreto para el clamp de ratios de M2.1 y necesita test propio.
+
+### 5.5.1 Lo que apareció al re-correr el extract (2026-08-02) — M1.8b
+
+Tres cosas que el relevamiento de arriba no había visto, todas con el túnel arriba y
+verificadas contra la fuente. Las dos primeras son **ADR-012**.
+
+**7. Obsequios y descontinuados nunca se filtraron.** El detalle está en ADR-012; lo que
+importa acá es que **el universo baja de 2.189 a 2.128 productos** y el extract de 137.399
+a 135.409 filas, así que **el piso de M1.8 quedó medido sobre otro universo**. Dos cosas
+que conviene tener escritas porque son contraintuitivas: el flag `producto.obsequio` **no
+sirve de filtro** (12 de los 48 marcados venden a precio real y los 48 cargan 0,92% del
+revenue), y el "." de los descontinuados vive en `descripcion`, no en `id`, así que el
+`REGEXP` numérico nunca los tocó — son subconjunto exacto de los `disabled`.
+
+**8. La réplica del snap puede estar atrasada, y el extract no se enteraba.** El 2026-08-02
+la réplica tenía facturas hasta el 17-07 pero solo **6.410 comprobantes en 2026-06 contra
+~14.000 típicos**, y 1 en 2026-07. `--hasta` toma por defecto el último mes **de calendario**
+completo, que no es lo mismo que el último mes **de datos** completo. Un mes a medio cargar
+no falla: se lee como un derrumbe de demanda, entra al ancla de deflación (que mira los
+últimos 3 meses) y es justo el mes contra el que se evalúa el último corte del backtest.
+
+> **El extract viejo se lo comió**: su último mes, 2026-06, tenía 32% de las unidades
+> normales. O sea que el piso congelado no solo mide otro universo — su último corte se
+> evalúa contra un mes incompleto.
+
+Cerrado con `detectar_meses_incompletos()`, fatal, que mira la **cola** de la serie. Se mide
+en **unidades**: las filas casi no se mueven (2026-06 dio 0,908 del normal, indistinguible
+de un mes sano) porque los mismos productos siguen apareciendo con menos transacciones cada
+uno, y el revenue arrastra inflación. Sobre 91 meses el ratio en unidades da p5 = 0,757 y
+**mínimo legítimo 0,614** (junio es estacionalmente flojo, 0,61-0,81 todos los años);
+2026-06 dio 0,321. El corte en **0,5** separa ocho años de meses sanos de la réplica
+atrasada, y el mensaje de error dice con qué `--hasta` re-extraer.
+
+**9. Del residuo de precios ínfimos, ver §6.2** — bajó de 1,2 M a 13.821 pero no se cerró,
+y la alternativa medida rompe CP-INF-01.
+
+#### Qué quedó abierto al cerrar M1.8b (2026-08-02)
+
+Lo que M1.8b **sí** cerró: el filtro de obsequios, la red contra la réplica atrasada, y el
+diagnóstico completo de por qué el deflactor explotaba. Lo que queda, en orden de a quién
+bloquea:
+
+| # | Qué falta | Bloquea | Costo |
+|---|---|---|---|
+| **1** | **Re-congelar el piso** sobre el universo nuevo (2.128 productos, ventana → 2026-05) | **El gate de M1 y toda comparación de M2.5.** Hasta entonces la tabla vigente es referencia, no piso | 214 min de corrida, `n_jobs=4`, con `--checkpoint-dir` |
+| ~~2~~ | ~~Decidir el residuo del deflactor~~ | — | **✅ CERRADA 2026-08-02** — `LIMITE_DESVIO_NIVEL = 10` contra categoría/laboratorio, nunca contra el IPC. 0 filas > 1.000, máximo 319. Ver §6.2 y ADR-012 punto 6 |
+| ~~3~~ | ~~Ratificar ADR-012 con el Analista~~ | — | **✅ ADR-012 Aceptada 2026-08-02** por el ML Specialist: es regla de universo del extract del motor, no cambia hechos persistidos. El impacto documental queda como pendiente informativo del Analista |
+| ~~4~~ | ~~CP-INF-03: cubrir el peldaño laboratorio con datos reales~~ | — | **Diferida por decisión explícita (2026-08-02):** en esta etapa no hace falta cubrir todos los peldaños. El laboratorio lo usa 1 producto de 2.128 y ahora además participa como nivel de contraste, así que la rama se ejercita de costado. Se retoma si algún peldaño pasa a ser relevante |
+| **5** | **Elegir el extract canónico**: `C:/dfv-extract` es el viejo, `C:/dfv-extract-v2` el bueno, `C:/dfv-extract-v3` una prueba con umbral $1 | Nada, pero es una trampa esperando: correr el backtest contra el directorio equivocado no falla | Decisión + borrar los otros dos |
+
+**Lo que NO cambió y sigue pendiente de antes**, para que no se pierda entre lo nuevo: la
+decisión de §12.5 (el piso es retrospectivo) y la de §5.6 (comparar a igual cobertura por
+las altas de catálogo). Las dos son **antes de M2.5**, no antes de M2.2.
+
+**Un detalle de calibración que quedó anotado y no resuelto:** `EDA_PRODUCTOS_ACTIVOS_36M`
+sigue valiendo 2.189, que es el número del EDA **contando obsequios**. El control pasa
+porque la tolerancia es ±10% y ahora damos 2.128 (−2,8%), pero ya no es comparación
+equivalente. Se dejó el número del EDA a propósito —su valor es la trazabilidad contra M0—
+con la aclaración escrita en el propio docstring de la constante.
 
 **Bonus para T0.4:** ya está medida la distribución real de productos por categoría
 (`CLINICO` 723, `SIN CATEGORIA` 491, `ANTIPARASITARIO EXTERNO` 359, `HIGIENE Y BELLEZA`
@@ -448,6 +509,62 @@ las features de M2.2**. Está fijado en un test (`test_un_precio_propio_basura_i
 deflactor_pero_no_mueve_el_agregado`) para que ninguna de las dos mitades cambie sin que se
 note. **Decidir antes de M2.2.**
 
+#### Estado de esa decisión al 2026-08-02 (M1.8b): la causa era el universo, y sigue abierta
+
+Se investigó y **la causa raíz no era del transformador**: eran obsequios facturados con un
+centinela de $0,01 que el extract nunca filtró (**ADR-012**). Sacándolos, el deflactor
+máximo baja de **1.227.361 a 13.821**.
+
+Pero **no lo cierra**: quedan **55 filas en 7 productos** con deflactor > 1000 (0,0031% del
+revenue real), por precios de $0,07–$0,10 que son otro centinela apenas arriba del umbral.
+Subir el umbral a $1 lo deja en 7 filas y tampoco lo cierra. Y el umbral no puede seguir
+subiendo indefinidamente: llega un punto en que recorta precios reales.
+
+**La alternativa está medida y funciona, y aun así se descartó.** Acotar el desvío del
+deflactor contra el de su nivel, `q = d / d_nivel`, a `[1/10, 10]`:
+
+| límite | recorta | peor mes | deflactor máx | Δ revenue real |
+|---|---|---|---|---|
+| 3 | 1,877% | 17,21% | 246,8 | +1,106% |
+| 5 | 1,123% | 8,81% | 308,6 | −0,164% |
+| **10** | **0,775%** | **2,51%** | **319,3** | **−0,322%** |
+| 20 | 0,626% | 2,34% | 421,1 | −0,135% |
+
+Mismo criterio que eligió `LIMITE_RELATIVO` (la columna del peor mes) y `q` tiene la ventaja
+de ser **inmune a los eventos macro**: una devaluación mueve numerador y denominador juntos.
+No se puede acotar `d` directo porque su magnitud legítima crece con la distancia al corte
+(mediana 1,02 en el año en curso, 54,4 a ocho años, máximos legítimos ~560).
+
+**El primer intento rompía CP-INF-01.** Aplicado contra *cualquier* nivel, el recorte hace
+que el índice le gane al **precio propio observado**, que es lo contrario de la prioridad de
+ADR-002. Verificado corriéndolo: fallaba
+`test_la_misma_venta_en_2019_y_en_2025_vale_lo_mismo_deflactada`.
+
+#### Cerrada el 2026-08-02: se acota contra categoría/laboratorio, nunca contra el IPC
+
+`LIMITE_DESVIO_NIVEL = 10` con `NIVELES_CONTRASTE = ("categoria", "laboratorio")`. La
+distinción no es un parche para que pase el test, y es lo que resuelve la tensión con
+ADR-002:
+
+- **Categoría y laboratorio se construyen con los relativos de los propios productos del
+  cliente.** Un producto que se despega 10× de su categoría se despega de un espejo de sí
+  mismo: eso es señal.
+- **El IPC es un índice macro externo** sin ninguna obligación de seguir precios
+  veterinarios. Despegarse de él es normal y no prueba nada.
+- **No contradice a ADR-002** porque son dos operaciones distintas: la cascada de ADR-002
+  *estima un precio que falta*; esto *valida uno que se observó*. Por eso acá el orden de
+  peldaños no aplica y el fondo de la cascada no sirve de contraste.
+
+Y es exactamente lo que salva CP-INF-01, cuyo fixture usa la rama IPC.
+
+**Resultado sobre el extract:** **0 filas con deflactor > 1.000** (eran 55), máximo **319**
+(era 13.821), mínimo 2,7e-3 (era 8,5e-5), revenue real total **−0,32%** y la serie anual sin
+cambios de 2021 en adelante. **2 tests nuevos**, uno verificado por mutación; el que fijaba
+la limitación vieja se reescribió para fijar la nueva.
+
+**La contracara, declarada:** en la rama sin categoría ni laboratorio el deflactor sigue sin
+cota. Sobre el extract es el 1,4% de las filas, y ninguna de las que explotaban cae ahí.
+
 #### Una corrección al propio código, encontrada por mutación
 
 La primera versión documentaba la base del encadenado en el primer mes como protección
@@ -504,7 +621,8 @@ nada, y también eso salió de la mutación.
 | S3 | M1 | Selección por serie · tabla sintética | M1.7 | ✅ 2026-07-30 — `modelado/seleccion.py` (los 7 candidatos en un solo pase, ganador por MASE, `resumen_de_ganadores`) + `scripts/congelar_baselines_sintetico.py`. Tabla congelada: `backtests/baselines-sintetico-2026-07-30.md` (corrida `f993bc6ae12e`, 400 productos estratificados según §5.2, 18 cortes, cobertura 1,0). **Hallazgo en §5.3:** los 7 ganan alguna serie y Croston gana más en `suave` que en `lumpy` — el enrutamiento por cuadrante habría sido peor. **108 tests verdes**, `ruff` limpio |
 | S3 | M1 | Checkpointing del arnés (precondición de M1.8) | M1.7a | ✅ 2026-07-29 — `ejecutar_backtest(directorio_checkpoint=...)`: un parquet por corte, reanudación que solo predice lo que falta, y **guarda por `id` de corrida** que rechaza reanudar con otra configuración o con otros datos en vez de mezclar checkpoints ajenos. 6 tests |
 | S4 | M1 | Extract del snap (precondición de M1.8) | M1.8a | ✅ 2026-07-31 — `motor/scripts/extraer_snap.py` **ejecutado**: 137.399 filas, 2.189 series, 96 meses sin huecos, 12 categorías, cross-check en verde y **2.189 productos activos, el número exacto del EDA**. SQL derivada de la que cotizaciones ya corre en producción con tres diferencias deliberadas (§5.4). Cinco hallazgos en §5.5, dos de ellos del esquema real que **también afectan al ETL de R1** (`producto.id` es varchar con colisiones; `nota_credito` es BIT) → pendiente del Analista en `planning/roadmap.md`. **32 tests**; los tres de regresión verificados fallando sin su arreglo |
-| S4 | M1 | **Piso real congelado** (máquina autorizada) | M1.8 | ✅ 2026-07-31 — `backtests/baselines-real-2026-07-31.md`, corrida `f7af767ca7e6`: 2.189 productos × 18 cortes × h=12 en 214 min con `n_jobs=4`. **Gate de M1 cumplido.** WAPE 0,32/0,15/0,12 (producto/categoría/total, h=1) y **sesgo total −1,4%, que ya cumple el ±5% de M2** — el −10% del sintético era un artefacto del generador. Cobertura < 1 explicada y diagnosticada al 100%: altas de catálogo (§5.6) |
+| S4 | M1 | **Piso real congelado** (máquina autorizada) | M1.8 | 🟡 **A RE-CONGELAR** (2026-08-02, M1.8b): la tabla vigente mide sobre un universo con obsequios y con 2026-06 a medio cargar (§5.5.1). Sirve como referencia, **no como gate** hasta re-correrla. ✅ 2026-07-31 — `backtests/baselines-real-2026-07-31.md`, corrida `f7af767ca7e6`: 2.189 productos × 18 cortes × h=12 en 214 min con `n_jobs=4`. WAPE 0,32/0,15/0,12 (producto/categoría/total, h=1) y **sesgo total −1,4%, que ya cumple el ±5% de M2** — el −10% del sintético era un artefacto del generador. Cobertura < 1 explicada y diagnosticada al 100%: altas de catálogo (§5.6) |
+| S4 | M1 | **Regla de universo: obsequios y descontinuados** (corrección de M1.8a) | M1.8b | ✅ 2026-08-02 — **ADR-012**. `UMBRAL_PRECIO_OBSEQUIO = 0,05` a nivel renglón + `detectar_meses_incompletos()` contra la réplica atrasada. Universo 2.189 → **2.128**, extract 137.399 → **135.409** filas. **248 tests**, `ruff` limpio; los 9 nuevos verificados por mutación. **Deja al piso de M1.8 pendiente de re-congelar** (§5.5.1) |
 | S4–S5 | — | Deuda del generador (precondición de M2.2, no bloquea M1) | T0.4 | ✅ 2026-07-31 (23 tests) |
 | S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | 🟡 M2.1 ✅ 2026-07-31 (67 tests) |
 | S7 | M2 | LightGBM global · cuantiles | M2.3–M2.4 | ⬜ |
@@ -701,6 +819,11 @@ para resolverlo después, no se resuelve ahora. Tres cosas para quien lo levante
 - **Corrida larga sin `--checkpoint-dir` es una apuesta perdida.** Lo de arriba no es
   hipotético: la corrida de M1.7 murió a mitad de camino y solo se salvó porque los cortes
   hechos estaban en disco. Para M1.8 (escala real, más horas) es obligatorio.
+- **"Último mes completo" es calendario, no datos.** La réplica del snap se atrasa: el
+  2026-08-02 tenía 2026-06 con 32% de las unidades normales y 2026-07 con una factura.
+  El default de `--hasta` no lo sabía y el extract del 2026-07-31 se lo comió entero.
+  Ahora `detectar_meses_incompletos()` corta la corrida y dice con qué `--hasta`
+  re-extraer, pero **conviene mirar el aviso antes de gastar 214 min de backtest.**
 - **No pipees el script a `grep` al correrlo en background:** el exit code que ves es el de
   `grep`, así que una corrida que murió reporta "exit code 0". Redirigí a un archivo.
 - **Los números publicados hasta hoy no dicen nada de calidad predictiva:** salen de un

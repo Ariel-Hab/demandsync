@@ -148,3 +148,60 @@ El relevamiento del 2026-07-27 (`motor/roadmap-motor.md` §5.1) encontró que el
 **Alternativas descartadas:** (a) densificar desde el inicio del dataset — inventa ceros de productos que no existían y corrompe la clasificación de intermitencia; (b) densificar solo entre primera y última venta — esconde la obsolescencia, que es un caso de negocio real; (c) dejar que cada modelo densifique por su cuenta — reintroduce el defecto en cada componente nuevo y hace incomparables las métricas entre modelos.
 
 **Docs impactados:** `motor/plan-diseno.md` (§Protocolo de backtesting: agregar la densificación como paso previo obligatorio), `motor/roadmap-motor.md` (§5.1 M1.0 ya la asume como entregable (a)), `motor/src/motor/backtesting/README.md` (regla de calendario), Plan de Pruebas UTN (el supuesto de demanda censurada pasa de nota a criterio explícito; coordinar con el Analista Funcional — registrado en `planning/roadmap.md`).
+
+---
+
+## ADR-011 — El IPC del INDEC viaja dentro del paquete del motor, con fecha de vencimiento
+**Estado:** Propuesta (2026-07-31) — a ratificar con el Backend Dev (afecta el empaquetado del job batch) y el Analista Funcional (es un insumo nuevo en el flujo de datos).
+
+**Contexto:** la cascada de deflación de ADR-002 es `producto → categoría → laboratorio → IPC`. Los tres primeros peldaños salen de las ventas del propio cliente; el cuarto no sale de ningún lado. Al implementar M2.1 apareció que **ese peldaño no tenía insumo**: la decisión estaba tomada desde 2026-06-21 pero la serie no existía en ninguna parte del repo, así que la cascada no tenía fondo y un producto sin categoría ni laboratorio medibles devolvía `NaN` propagado.
+
+Medido sobre el extract real: el IPC atiende **12 productos de 2.189 (0,5%)** al resolver el ancla. Es poco, pero un camino de código que no existe no se puede testear, y CP-INF-03 lo exige.
+
+**Decisión:** la serie `148.3_INIVELNAL_DICI_M_26` de `apis.datos.gob.ar` (IPC Nivel General Nacional, base dic-2016, publicada por la Subsecretaría de Programación Macroeconómica sobre el IPC del INDEC, licencia CC-BY 4.0) se commitea en `motor/src/motor/datos/ipc_indec.csv` y se lee con `motor.datos.ipc.cargar_ipc()`.
+
+1. **Viaja dentro del paquete** (`[tool.setuptools.package-data]`), no como archivo de configuración externo: si la rueda se construye sin él, la cascada se queda sin fondo en producción y el fallo aparece recién en el 0,5% de los casos.
+2. **Es inyectable**: `TransformadorDeflacion(ipc=...)` acepta otra serie. El CSV es el default, no un acoplamiento.
+3. **No lo alcanza ADR-006.** La regla prohíbe datos **del cliente**; esto es dato público del Estado y no dice nada de DFV. Es la única excepción a "en el repo no entran datos", y es una excepción aparente, no real.
+4. **Se vence, y falla fuerte.** Un corte posterior al último mes del CSV levanta `IpcDesactualizado`. Devolver el último dato disponible subestimaría la inflación **en silencio** y achicaría los montos deflactados de todo el tramo faltante — el tipo de error que no se encuentra nunca. Actualizarlo es re-correr un `curl` documentado en el docstring del módulo.
+5. **La base (dic-2016 = 100) se conserva tal como la publica la fuente.** Es arbitraria y se cancela —la deflación solo usa cocientes entre dos meses— y renormalizarla a algo más cómodo perdería la trazabilidad contra el original.
+
+**Consecuencias:** el motor pasa a tener **un insumo externo**, cuando hasta ahora todo salía de las tablas del cliente; hay que decirlo en `arquitectura.md`. El empaquetado del job batch tiene que incluir datos de paquete, no solo código. Aparece una **tarea de mantenimiento recurrente** que hoy no tiene dueño: el CSV va quedando viejo y el motor deja de poder deflactar cortes nuevos. Mientras el batch corra sobre historia cerrada no molesta; cuando R4 lo ponga a correr sobre el mes en curso, hay que resolver si se actualiza a mano o si el ETL de R1 trae la serie como una `VARIABLE_EXTERNA` más — que probablemente sea lo correcto a largo plazo y convertiría a este ADR en transitorio.
+
+**Alternativas descartadas:** (a) **dejar el peldaño sin insumo y devolver `NaN`** — deja 12 productos sin deflactar y, peor, una rama de la cascada que nunca se ejecuta y por lo tanto nunca se prueba; (b) **pedirlo por API en cada corrida** — mete una dependencia de red en un job batch que hoy no la tiene y hace no reproducible un backtest; (c) **usar un nivel "global" (todos los productos) en vez del IPC** — mediría precios veterinarios y sería *mejor* estimador que la inflación macro, pero cambia la cascada que fija ADR-002; si alguna vez el peldaño IPC pasa a ser relevante, esto amerita su propio ADR y no un cambio silencioso.
+
+**Docs impactados:** `docs/arquitectura.md` (§Flujo de datos: el motor tiene un insumo externo; §Entorno: el empaquetado incluye package-data), `motor/README.md` (§Interfaces — hecho), `motor/src/motor/deflacion/README.md` (hecho), `motor/roadmap-motor.md` §6.1 (hecho), Acta/DER si se decide que el IPC pase a ser `VARIABLE_EXTERNA` en R1 — registrado como pendiente del Analista Funcional en `planning/roadmap.md`.
+
+---
+
+## ADR-012 — El obsequio se identifica por el precio del renglón, no por el flag del producto; `disabled` es estado actual y no se aplica hacia atrás
+**Estado:** **Aceptada (2026-08-02)** por el ML Specialist. Es regla de universo del extract del motor —qué renglón es una venta y qué producto entra al backtest— y no cambia hechos persistidos ni obliga a nadie más. El impacto sobre el contrato de ingesta y los documentos UTN queda como **pendiente informativo** del Analista Funcional en `planning/roadmap.md`, no como condición para aplicarla.
+
+**Contexto:** al resolver la decisión abierta de M2.1 (deflactores absurdos por precios propios ínfimos) apareció que la causa no era del transformador de deflación sino del **universo**: el extract de M1.8a nunca excluyó obsequios ni productos descontinuados, porque el EDA no los había relevado. Medido sobre el snap el 2026-08-02:
+
+- **Obsequios.** El ERP exige `precio > 0`, así que un obsequio se factura con un centinela de **$0,01**. Son **3.638 renglones / 4.067 unidades** desde 2018-07. Los facturados en `0` —200.334 renglones, 767.882 unidades— ya salían por el filtro `precio > 0` que el extract heredó de cotizaciones; el centinela se colaba.
+- **El flag `producto.obsequio` existe** (`bit(1)`, 682 en el catálogo, 48 en el universo) **pero no sirve como filtro**: los 48 cargan **0,92% del revenue** y 12 de ellos venden a precio real (máximo, mediana $4.717). Y al revés: 22 productos que facturan siempre a $0,01 **no** están marcados.
+- **Descontinuados.** La convención de prefijar con "." vive en `producto.descripcion` (460 en el catálogo, 73 en el universo), **no** en `producto.id` — el `REGEXP '^[0-9]+$'` del extract no los tocaba. Los 73 son **subconjunto exacto** de los 313 `disabled`.
+- **`disabled` no tiene fecha**: `fecha_ultima_modificacion` es NULL en 7.398 de 7.947 y es un timestamp genérico. Y no significa "dejó de venderse": 116 de los 313 del universo vendieron en 2026.
+
+**Decisión:**
+
+1. **El obsequio se corta a nivel renglón, por precio**, con `UMBRAL_PRECIO_OBSEQUIO = 0,05` en `motor/scripts/extraer_snap.py`. No se corta por producto: eso borraría 0,92% de revenue real.
+2. **El umbral absoluto es válido acá, y solo acá.** En una economía con ×79 de inflación en la ventana un piso en pesos normalmente no significa nada, pero **$0,01 no es un precio, es un centinela**: el tramo va de 0,01 a 0,05 en *todos* los años sin deriva inflacionaria, y entre $0,05 y $5 quedan 5 a 90 renglones por año en 1 a 9 productos. Cualquier valor de ese hueco separa igual.
+3. **El flag `obsequio` queda como contraste, no como filtro**: 84% de los renglones que el umbral descarta caen en productos marcados. Que coincidan valida la lectura; que no coincidan del todo es lo que impide usar el flag solo.
+4. **Los descontinuados no se excluyen del backtest.** `disabled` es estado de hoy, como el stock de ADR-004. Aplicarlo a cortes históricos es **sesgo de supervivencia**: al corte 2024-12, 184 productos hoy-`disabled` vendían y valían 2,82% del revenue de esa ventana; excluirlos borra justamente los productos que después murieron e infla el piso. Para el backtest rige el criterio empírico ya validado (`roadmap-motor.md` §12.1: silencio final que supere el hueco más largo del propio producto, 5,8% real). El flag se usa **solo en la corrida productiva**, donde "hoy" es efectivamente hoy.
+5. **No se agrega regla para el ".":** al ser subconjunto de `disabled` no aporta información. Se documenta la equivalencia para que nadie la escriba dos veces.
+
+**Consecuencias:** el universo baja de 2.189 a **2.128 productos** y el extract de 137.399 a 135.409 filas. **El piso de M1.8 (`backtests/baselines-real-2026-07-31.md`) queda medido sobre otro universo** y hay que re-congelarlo antes de que M2.5 compare contra él; el efecto en las métricas debería ser chico (los obsequios son 0,016% de las unidades y WAPE es `Σ|e|/Σ|y|`, ponderado por magnitud) pero eso **hay que medirlo, no suponerlo**. El ETL de R1 se come las mismas dos trampas: va a sumar obsequios como ventas y a leer el "." como parte del nombre.
+
+6. **El deflactor directo se acota contra el nivel, y el IPC no cuenta como nivel.** Sacar los obsequios bajó el deflactor máximo de 1.227.361 a 13.821, pero quedaban **55 filas en 7 productos** por precios de $0,07–$0,10, otro centinela apenas arriba del umbral (subirlo a $1 dejaba 7 filas y tampoco cerraba). Se agrega `LIMITE_DESVIO_NIVEL = 10`: se acota `q = d / d_nivel` a `[1/10, 10]` y se reconstruye `d = clip(q) × d_nivel`.
+
+   **No se puede acotar `d` directo** porque su magnitud legítima crece con la distancia al corte —mediana 1,02 en el año en curso contra 54,4 a ocho años, máximos legítimos ~560—, así que cualquier cota fija recorta inflación real. `q` en cambio es adimensional (mediana 0,980, p99 2,22) y **es inmune a los eventos macro**: una devaluación mueve numerador y denominador juntos, que es justo lo que obligó a `LIMITE_RELATIVO` a subir hasta 3.
+
+   **El contraste se hace solo contra categoría y laboratorio, nunca contra el IPC.** Los dos primeros se construyen con los relativos de los propios productos del cliente, así que despegarse de ellos es señal; el IPC es un índice macro que no tiene por qué seguir precios veterinarios, y recortar contra él castigaría al producto por no seguir a la inflación general. Esa distinción es lo que hace que el recorte **no contradiga a ADR-002**: la cascada de ADR-002 sirve para *estimar un precio que falta*, y esto es otra operación, *validar uno que se observó*. Y es lo que mantiene intacta la garantía de **CP-INF-01** — verificado: con el recorte aplicado también al IPC, el caso de aceptación falla.
+
+   Medido sobre el extract: **0 filas con deflactor > 1.000** (eran 55), máximo **319**, revenue real total **−0,32%** y la serie anual sin cambios de 2021 en adelante.
+
+**Alternativas descartadas:** (a) **excluir por `producto.obsequio`** — borra 0,92% de revenue real de 12 productos que venden de verdad; (b) **excluir por precio a nivel producto** ("nunca superó $0,05") — 58 productos, pero se lleva puestos los que venden y además regalan, y deja afuera el caso inverso; (c) **excluir los `disabled` del backtest** — sesgo de supervivencia medido; (d) **regla propia para el "."** — redundante con `disabled`.
+
+**Docs impactados:** `docs/contrato-ingesta.md` (§1/§3: el exportador tiene que decir si un renglón es obsequio, o DemandSync sigue infiriéndolo por precio), DER (`producto.obsequio` y `producto.disabled` como atributos, y que `disabled` no tiene fecha), Plan de Pruebas UTN (CP-INF-* y el universo de CP-VOL-01), `docs/datos-defeve.md` (los dos flags y la convención del "."), `motor/roadmap-motor.md` §5.4/§5.5/§6.2/§9 (hecho), `motor/scripts/README.md`. Los documentos formales los edita el Analista Funcional — registrado como pendiente en `planning/roadmap.md`.
