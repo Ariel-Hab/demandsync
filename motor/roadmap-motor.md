@@ -165,6 +165,9 @@ series lumpy donde pierde. **No enrutar por cuadrante en M2/M3 sin volver a medi
 - **El sesgo a nivel total es ≈ −10%** (−0,1049 a h=1), o sea que los baselines
   **sub-pronostican** de forma sistemática. El gate de M2 exige ±5% a nivel total, así que
   esto no lo cumple — es una vara que el modelo global tiene que mejorar, no igualar.
+  *(2026-08-03: la magnitud del sintético sigue sin calibrar, pero **la dirección era
+  correcta**. §5.6 la dio por refutada con datos reales y se equivocó por el mes
+  incompleto; el piso bueno sub-pronostica −5,2%/−6,0% a h=6/h=12 — ver §5.6.1.)*
 - **El efecto de nivel es de ~5x**, más fuerte que el 3-4x medido en M1.2: WAPE 0,81 a
   grano producto contra 0,24 en categoría y 0,16 en total (h=1). Refuerza que un WAPE sin
   nivel declarado no significa nada.
@@ -312,11 +315,11 @@ bloquea:
 
 | # | Qué falta | Bloquea | Costo |
 |---|---|---|---|
-| **1** | **Re-congelar el piso** sobre el universo nuevo (2.128 productos, ventana → 2026-05) | **El gate de M1 y toda comparación de M2.5.** Hasta entonces la tabla vigente es referencia, no piso | 214 min de corrida, `n_jobs=4`, con `--checkpoint-dir` |
+| ~~1~~ | ~~**Re-congelar el piso** sobre el universo nuevo~~ | — | **✅ CERRADA 2026-08-03** — corrida `a79a9b23676b`, 294 min, `backtests/baselines-real-2026-08-03.md`. Ver §5.6.1: descompuesto, **el filtro de obsequios no movió el piso; lo movía el mes incompleto**, y el sesgo destapado incumple el ±5% de M2 a h=6/12 |
 | ~~2~~ | ~~Decidir el residuo del deflactor~~ | — | **✅ CERRADA 2026-08-02** — `LIMITE_DESVIO_NIVEL = 10` contra categoría/laboratorio, nunca contra el IPC. 0 filas > 1.000, máximo 319. Ver §6.2 y ADR-012 punto 6 |
 | ~~3~~ | ~~Ratificar ADR-012 con el Analista~~ | — | **✅ ADR-012 Aceptada 2026-08-02** por el ML Specialist: es regla de universo del extract del motor, no cambia hechos persistidos. El impacto documental queda como pendiente informativo del Analista |
 | ~~4~~ | ~~CP-INF-03: cubrir el peldaño laboratorio con datos reales~~ | — | **Diferida por decisión explícita (2026-08-02):** en esta etapa no hace falta cubrir todos los peldaños. El laboratorio lo usa 1 producto de 2.128 y ahora además participa como nivel de contraste, así que la rama se ejercita de costado. Se retoma si algún peldaño pasa a ser relevante |
-| **5** | **Elegir el extract canónico**: `C:/dfv-extract` es el viejo, `C:/dfv-extract-v2` el bueno, `C:/dfv-extract-v3` una prueba con umbral $1 | Nada, pero es una trampa esperando: correr el backtest contra el directorio equivocado no falla | Decisión + borrar los otros dos |
+| **5** | **Borrar los extracts viejos.** El canónico quedó definido de hecho el 2026-08-03: **`C:/dfv-extract-v2`** es contra el que se corrió el piso (§5.6.1). Siguen en disco `C:/dfv-extract` (viejo) y `-v3` (prueba con umbral $1) | Nada hoy, pero es una trampa esperando: correr contra el directorio equivocado **no falla, da otro número** | Borrar dos directorios. **Ojo: no antes de haber cerrado el análisis de la corrida vieja** — los checkpoints de `C:/dfv-checkpoints` fueron los que permitieron descomponer el cambio del piso |
 
 **Lo que NO cambió y sigue pendiente de antes**, para que no se pierda entre lo nuevo: la
 decisión de §12.5 (el piso es retrospectivo) y la de §5.6 (comparar a igual cobertura por
@@ -335,11 +338,15 @@ con la aclaración escrita en el propio docstring de la constante.
 1). Es lo que faltaba para que corregir las categorías del sintético sea algo más que
 renombrar: la distribución es **muy** despareja y el generador hoy reparte uniforme.
 
-### 5.6 M1.8 cerrado — el piso real (2026-07-31)
+### 5.6 M1.8 — el primer piso real (2026-07-31), reemplazado
+
+> ⚠️ **Esta corrida ya no es el piso.** La reemplaza §5.6.1 (corrida `a79a9b23676b`,
+> 2026-08-03). Se conserva entera porque tres de sus cuatro conclusiones siguen valiendo y
+> porque **la cuarta —el sesgo— resultó ser un artefacto**, que es justamente lo que
+> §5.6.1 explica. Leerla sin esa advertencia lleva a la conclusión equivocada.
 
 Corrida `f7af767ca7e6`: **2.189 productos, 18 cortes, horizonte 12, 214 min** con
-`n_jobs=4`. Tabla en `backtests/baselines-real-2026-07-31.md`. **Este es el piso a
-batir.**
+`n_jobs=4`. Tabla en `backtests/baselines-real-2026-07-31.md`.
 
 | nivel | h=1 | h=3 | h=6 | h=12 |
 |---|---|---|---|---|
@@ -352,6 +359,12 @@ ahí salió la advertencia de que el gate de ±5% de M2 era "vara a mejorar". **
 reales los baselines ya cumplen ese gate** (−0,0136 a h=1; el peor horizonte es +0,0521 a
 h=12, también dentro de ±5%). La conclusión sacada del sintético estaba equivocada, y es
 un recordatorio de que ese dataset no calibra magnitudes.
+
+> ❌ **Este punto es falso y §5.6.1 lo mide.** El −1,4% era un artefacto del mes
+> incompleto: 2026-06 entraba como mes evaluado con 32% de las unidades, así que `real`
+> quedaba chico y `pred − real` se corría hacia arriba, tapando un sub-pronóstico. Sacando
+> solo ese mes, el sesgo total a h=12 pasa de **−1,1% a −8,2%** — **fuera del ±5%**. Lo
+> que sigue valiendo del párrafo es que el −10% del sintético tampoco era el número real.
 
 **2. El WAPE real es menos de la mitad del sintético** (0,32 contra 0,81 a grano
 producto). No es que el motor mejorara: la composición es otra —el catálogo real es 58%
@@ -385,6 +398,86 @@ direcciones. Se suma a la decisión ya abierta de §12.5.
 **Mejora al script, ya aplicada:** `_nota_de_cobertura()` hace que toda tabla futura con
 cobertura < 1 lleve la advertencia en el encabezado. Dejar el número en una columna al
 medio de la tabla es dejarlo donde nadie lo mira.
+
+### 5.6.1 M1.8 re-congelado — EL piso (2026-08-03)
+
+Corrida `a79a9b23676b`: **2.128 productos, 18 cortes (2024-11..2026-04), horizonte 12,
+294 min** con `n_jobs=4`, sobre el extract `C:/dfv-extract-v2` (universo de ADR-012).
+Tabla en `backtests/baselines-real-2026-08-03.md`. **Este es el piso a batir.**
+
+| nivel | h=1 | h=3 | h=6 | h=12 |
+|---|---|---|---|---|
+| producto | 0,2870 | 0,2954 | 0,3114 | 0,3034 |
+| categoría | 0,1283 | 0,1321 | 0,1691 | 0,1654 |
+| total | 0,1029 | 0,1005 | 0,1191 | 0,0954 |
+
+La corrida cambió **dos cosas a la vez** respecto de §5.6 —el universo (2.189 → 2.128) y
+la ventana de cortes (2024-12..2026-05 → 2024-11..2026-04, porque el extract ya no llega
+al mes incompleto)—, así que las tablas **no se comparan número a número**. Lo que sí se
+pudo hacer, porque los checkpoints de las dos corridas sobrevivían, es **descomponer la
+diferencia sin reajustar un solo modelo**: recortar subconjuntos de las predicciones ya
+calculadas y recalcular las métricas por el mismo camino. Los cuatro escenarios, todos
+sobre los **17 cortes compartidos**:
+
+| escenario | WAPE prod h=1 | WAPE prod h=12 | WAPE total h=12 | sesgo total h=12 |
+|---|---|---|---|---|
+| **A** — viejo, 2.189 productos, con 2026-06 | 0,2939 | 0,3529 | 0,1585 | **−0,0108** |
+| **A′** — solo los 2.128 que sobreviven a ADR-012 | 0,2933 | 0,3528 | 0,1586 | −0,0108 |
+| **A″** — A′ sin el mes incompleto (2026-06) | 0,2899 | 0,2943 | 0,1002 | **−0,0823** |
+| **B** — corrida nueva, historias limpias | 0,2899 | 0,2943 | 0,1002 | −0,0824 |
+
+**1. El filtro de obsequios no movió el piso. Nada.** A → A′ cambia el WAPE en la cuarta
+decimal (0,2939 → 0,2933) y el sesgo en ninguna. Es contraintuitivo porque M1.8b se trató
+casi enteramente de eso, pero tiene una explicación de una línea: **el WAPE es un cociente
+de sumas** (`Σ|real−pred| / Σ|real|`, ver `metricas.py:147`), así que pondera por
+magnitud, y los 61 productos que se fueron son series diminutas. En unidades el universo
+cambió **0,39%** (31,24 M → 31,12 M). ADR-012 era necesaria —sin ella el deflactor
+explotaba— pero **su justificación no es el piso**, y conviene no recordarla como si lo
+fuera.
+
+**2. El que invalidaba el piso era el mes incompleto, y solo él.** A′ → A″ es donde se
+mueve todo: WAPE producto h=12 **0,3528 → 0,2943** (−17%), total h=12 **0,1586 → 0,1002**
+(−37%). Sacar 2026-06 de los meses evaluados es toda la diferencia. Y A″ → B es
+**idéntico a cuatro decimales**: limpiar las historias de los productos que sí sobreviven
+y reajustar los siete modelos no cambió nada medible. O sea que de los tres hallazgos de
+M1.8b, **el que tenía consecuencias sobre el piso era el #8** (la réplica atrasada), no el
+#7.
+
+**3. El sesgo estaba tapado, y ahora incumple el gate de M2 en horizonte largo.** Es el
+hallazgo que importa. Con 2026-06 adentro el sesgo total a h=12 daba **−1,1%** y §5.6
+concluyó que "los baselines ya cumplen el ±5%". Sacando ese mes da **−8,2%**. El mecanismo
+es aritmético: `sesgo = Σ(pred−real)/Σ|real|` (`metricas.py:163`), un mes con 32% de las
+unidades reales achica el denominador y sobre todo hace `pred − real` menos negativo, así
+que **enmascara un sub-pronóstico**. Pegó tanto en h=12 porque a nivel total ese horizonte
+tiene **n=7** pares corte-objetivo: uno de los siete se evaluaba contra el mes roto.
+
+El piso nuevo queda así contra el gate de ±5% a nivel total:
+
+| horizonte | sesgo total | ¿dentro de ±5%? |
+|---|---|---|
+| 1 | −0,0338 | sí |
+| 3 | −0,0260 | sí |
+| 6 | −0,0517 | **no, apenas** |
+| 12 | −0,0597 | **no** |
+
+**Consecuencia para M2:** el gate de sesgo **no es un trámite**. Los baselines
+sub-pronostican sistemáticamente en horizonte largo y el global tiene que corregirlo, no
+solo empatar el WAPE. Esto no cambia el gate de M1 —que pide una tabla congelada, no que
+los baselines cumplan el gate de M2— pero sí borra la tranquilidad que dejó §5.6.
+
+**4. Lo que se replicó sin cambios.** La cobertura vuelve a bajar (0,9920 → 0,8880) y otra
+vez el **100,00%** de las 12.700 filas sin predicción son altas de catálogo: 262 series de
+275 productos nuevos, cero sin explicar. `SIN CATEGORIA` cae a 0,4953 a h=12 porque **226
+de esos 275 (82,2%) no tienen categoría**. Y ningún candidato domina: el más ganador
+(`SeasonalNaive`) baja de 678 a **481 de 2.106 series (23%)**, y **`CrostonSBA` vuelve a
+ganar mucho más en `suave` (315) que en `lumpy` (20)**. Tercera medición del mismo
+hallazgo contraintuitivo de §5.3 — no enrutar por cuadrante sin volver a medirlo.
+
+**Lección de método, que es la misma de siempre en otra forma:** el piso viejo no estaba
+mal por un error de código, sino porque **un mes de datos entró incompleto y nada avisaba**.
+Se pudo separar la causa de la casualidad únicamente porque los checkpoints de las dos
+corridas seguían en disco. Vale la pena no borrarlos hasta haber cerrado el análisis de la
+corrida que los produjo.
 
 **Gate de salida de M1:** existe una tabla de error de baselines, sobre datos reales, desagregada por horizonte × nivel × cuadrante, congelada y commiteada. A partir de acá **ningún modelo se promociona sin batirla** (disciplina baselines-first, CLAUDE.md §6).
 
@@ -621,7 +714,7 @@ nada, y también eso salió de la mutación.
 | S3 | M1 | Selección por serie · tabla sintética | M1.7 | ✅ 2026-07-30 — `modelado/seleccion.py` (los 7 candidatos en un solo pase, ganador por MASE, `resumen_de_ganadores`) + `scripts/congelar_baselines_sintetico.py`. Tabla congelada: `backtests/baselines-sintetico-2026-07-30.md` (corrida `f993bc6ae12e`, 400 productos estratificados según §5.2, 18 cortes, cobertura 1,0). **Hallazgo en §5.3:** los 7 ganan alguna serie y Croston gana más en `suave` que en `lumpy` — el enrutamiento por cuadrante habría sido peor. **108 tests verdes**, `ruff` limpio |
 | S3 | M1 | Checkpointing del arnés (precondición de M1.8) | M1.7a | ✅ 2026-07-29 — `ejecutar_backtest(directorio_checkpoint=...)`: un parquet por corte, reanudación que solo predice lo que falta, y **guarda por `id` de corrida** que rechaza reanudar con otra configuración o con otros datos en vez de mezclar checkpoints ajenos. 6 tests |
 | S4 | M1 | Extract del snap (precondición de M1.8) | M1.8a | ✅ 2026-07-31 — `motor/scripts/extraer_snap.py` **ejecutado**: 137.399 filas, 2.189 series, 96 meses sin huecos, 12 categorías, cross-check en verde y **2.189 productos activos, el número exacto del EDA**. SQL derivada de la que cotizaciones ya corre en producción con tres diferencias deliberadas (§5.4). Cinco hallazgos en §5.5, dos de ellos del esquema real que **también afectan al ETL de R1** (`producto.id` es varchar con colisiones; `nota_credito` es BIT) → pendiente del Analista en `planning/roadmap.md`. **32 tests**; los tres de regresión verificados fallando sin su arreglo |
-| S4 | M1 | **Piso real congelado** (máquina autorizada) | M1.8 | 🟡 **A RE-CONGELAR** (2026-08-02, M1.8b): la tabla vigente mide sobre un universo con obsequios y con 2026-06 a medio cargar (§5.5.1). Sirve como referencia, **no como gate** hasta re-correrla. ✅ 2026-07-31 — `backtests/baselines-real-2026-07-31.md`, corrida `f7af767ca7e6`: 2.189 productos × 18 cortes × h=12 en 214 min con `n_jobs=4`. WAPE 0,32/0,15/0,12 (producto/categoría/total, h=1) y **sesgo total −1,4%, que ya cumple el ±5% de M2** — el −10% del sintético era un artefacto del generador. Cobertura < 1 explicada y diagnosticada al 100%: altas de catálogo (§5.6) |
+| S4 | M1 | **Piso real congelado** (máquina autorizada) | M1.8 | ✅ **2026-08-03 — re-congelado** (§5.6.1): `backtests/baselines-real-2026-08-03.md`, corrida `a79a9b23676b`, 2.128 productos × 18 cortes (2024-11..2026-04) × h=12 en 294 min con `n_jobs=4` sobre `C:/dfv-extract-v2`. WAPE **0,287 / 0,128 / 0,103** (producto/categoría/total, h=1). Cobertura < 1 diagnosticada al 100%: altas de catálogo. **Descompuesto contra la corrida anterior** reusando los checkpoints de ambas: el filtro de obsequios de ADR-012 **no movió el piso** (0,2939 → 0,2933), lo movía **el mes incompleto**; y al sacarlo se destapa un **sesgo total de −5,2% a h=6 y −6,0% a h=12, fuera del ±5% de M2** — el −1,4% de la corrida vieja era artefacto. La primera corrida (`f7af767ca7e6`, 2026-07-31) queda como registro histórico, no como referencia |
 | S4 | M1 | **Regla de universo: obsequios y descontinuados** (corrección de M1.8a) | M1.8b | ✅ 2026-08-02 — **ADR-012**. `UMBRAL_PRECIO_OBSEQUIO = 0,05` a nivel renglón + `detectar_meses_incompletos()` contra la réplica atrasada. Universo 2.189 → **2.128**, extract 137.399 → **135.409** filas. **248 tests**, `ruff` limpio; los 9 nuevos verificados por mutación. **Deja al piso de M1.8 pendiente de re-congelar** (§5.5.1) |
 | S4–S5 | — | Deuda del generador (precondición de M2.2, no bloquea M1) | T0.4 | ✅ 2026-07-31 (23 tests) |
 | S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | 🟡 M2.1 ✅ 2026-07-31 (67 tests) |
