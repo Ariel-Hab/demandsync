@@ -1,6 +1,6 @@
 # motor/ — Motor de Predicción de Demanda
 
-**Responsable:** ML Specialist. **Estado:** M1 en curso (S0 y M1.0–M1.7 cerrados; falta M1.8, el piso real). Ver [`roadmap-motor.md`](roadmap-motor.md) §9 para el estado vigente.
+**Responsable:** ML Specialist. **Estado:** M1 cerrado (piso real congelado en `backtests/`), T0.4 y M2.1 cerradas; en curso M2.2 (features). Ver [`roadmap-motor.md`](roadmap-motor.md) §9 para el estado vigente.
 
 > **Regla de trabajo en este módulo (CLAUDE.md §6):** todo desarrollo se controla contra [`roadmap-motor.md`](roadmap-motor.md). Antes de codear, ubicá la tarea en una unidad de trabajo (`T0.x`/`M1.x`/…); si no existe, se agrega al roadmap primero. No se empieza un hito con el gate del anterior sin cumplir. Al terminar, se actualiza el estado de la unidad en el roadmap en la misma unidad de trabajo.
 
@@ -17,6 +17,7 @@ Todo lo que ocurre entre los hechos mensuales materializados y la tabla `PREDICC
 ## Interfaces
 
 - **Entrada:** `HECHO_VENTA_MENSUAL_PRODUCTO`, `HECHO_VENTA_MENSUAL_CLIENTE_PRODUCTO`, `CLIENTE_FEATURE`, catálogo, `VARIABLE_EXTERNA`, `PARAMETRO_SISTEMA`.
+- **Único insumo externo:** la serie del IPC nacional del INDEC, empaquetada en `motor.datos.ipc` (dato público, CC-BY; es el último peldaño del fallback de ADR-002). Se vence: un corte posterior al último mes del CSV levanta `IpcDesactualizado` en vez de subestimar la inflación en silencio.
 - **Salida:** `ANCLA_PRECIO_PRODUCTO`, `INDICE_PRECIO_NIVEL`, `SEGMENTO`/`CLIENTE_SEGMENTO`, `PREDICCION_DEMANDA` (con intervalos), `RECOMENDACION`, todo colgado de una `EJECUCION_MODELO`.
 - El acceso a esas tablas es **a través de una interfaz de repositorio** con dos implementaciones —archivos locales y PostgreSQL— para que el motor se desarrolle y se evalúe sin depender del Release 1 (ADR-009, *Propuesta*: a ratificar con el Backend Dev).
 - El motor **no** expone HTTP ni lee JSON crudo del ERP: es una librería Python invocada por el job batch nocturno.
@@ -48,12 +49,13 @@ comparando contra ese archivo. Quitá `--sin-contrato` solo si necesitás los
 `ventas_<AAAAMM>.json` del contrato de ingesta (tarda bastante más y pesa ~240 MB).
 
 Layout `src/`: el paquete importable es `motor` (`motor/src/motor/`). Ya existen `datos/`
-(T0.3), `backtesting/` (M1.0–M1.3, ver su propio
+(T0.3, más el IPC del INDEC empaquetado en M2.1), `backtesting/` (M1.0–M1.3, ver su propio
 [README](src/motor/backtesting/README.md)), `clasificacion.py` (M1.4: cuadrantes
-Syntetos-Boylan por serie) y `modelado/` (M1.5–M1.7: baselines `statsforecast`, rama
+Syntetos-Boylan por serie), `modelado/` (M1.5–M1.7: baselines `statsforecast`, rama
 intermitente y selección por serie, ver su propio
-[README](src/motor/modelado/README.md)). El resto de los subpaquetes se agregan en sus
-propias unidades de trabajo del roadmap.
+[README](src/motor/modelado/README.md)) y `deflacion/` (M2.1: ADR-002 de punta a punta, ver
+su propio [README](src/motor/deflacion/README.md)). El resto de los subpaquetes se agregan
+en sus propias unidades de trabajo del roadmap.
 
 Fuera del paquete hay dos carpetas de scripts, ninguna importable por el job batch:
 
