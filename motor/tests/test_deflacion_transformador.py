@@ -252,37 +252,73 @@ class TestPreciosNoUtilizables:
             "reconstruido desde el mes anterior con la deriva del nivel"
         )
 
-    def test_un_precio_propio_basura_infla_su_deflactor_pero_no_mueve_el_agregado(self):
-        """**Limitación conocida de M2.1, medida y acotada — no es un descuido.**
+    def test_un_precio_propio_basura_queda_acotado_contra_su_categoria(self):
+        """El caso que motivó `LIMITE_DESVIO_NIVEL` (M1.8b, 2026-08-02).
 
-        El clamp protege el índice *de nivel*, no el deflactor directo: cuando el producto
-        tiene precio propio ese mes, el deflactor es `ancla / precio_propio`, y un precio
-        de $0,01 lo hace explotar. Sobre el extract real son **93 filas de 7 productos**
-        (0,068%) con deflactor hasta 1,2 millones.
+        Cuando el producto tiene precio propio ese mes el deflactor es
+        `ancla / precio_propio`, así que un precio centinela de $0,01 lo hace explotar sin
+        que `LIMITE_RELATIVO` —que protege el índice, no esto— pueda frenarlo. Sobre el
+        extract eran 55 filas de 7 productos con deflactor de hasta 13.821.
 
-        No mueve nada monetario porque esas filas tienen revenue ≈ 0: aportan 1,3 M sobre
-        294.733 M de revenue real, o sea 0,000%. Pero la columna `deflactor` queda con
-        valores sin sentido, y eso **sí** importa para cualquier feature de M2.2 que se
-        construya sobre ella. Está anotado en el roadmap como decisión abierta.
+        Acotar el desvío contra la categoría lo cierra: 0 filas por encima de 1.000 y
+        máximo 319, con el revenue real total moviéndose −0,32%.
+        """
+        meses = _meses("2024-01-01", 12)
+        vecinos = [_serie(p, meses, 100.0 * p, 1.10) for p in (2, 3, 4)]
+        filas = _serie(1, meses, 100.0, 1.10)
+        filas[3] = (1, meses[3], 2.0, 0.02, 0.01)  # precio basura, revenue despreciable
+        hechos = _hechos(filas, *vecinos)
+        catalogo = _catalogo({p: ("CLINICO", "ACME") for p in (1, 2, 3, 4)})
 
-        Este test fija las dos mitades del hecho para que ninguna cambie sin que se note.
+        ajustado = TransformadorDeflacion(catalogo=catalogo, ipc=_ipc(meses)).ajustar(
+            hechos, meses[-1]
+        )
+        deflactor = ajustado.deflactor_
+        del_producto = deflactor[deflactor["id_producto"] == 1].set_index("anio_mes")
+
+        assert del_producto.loc[meses[3], "deflactor"] < 1_000, (
+            "el precio centinela ya no puede inflar el deflactor sin límite"
+        )
+
+    def test_sin_categoria_no_se_acota_y_es_a_proposito(self):
+        """El recorte necesita un espejo construido con precios del propio cliente.
+
+        Un producto sin categoría ni laboratorio solo tiene al IPC como referencia, y el
+        IPC no tiene ninguna obligación de seguir precios veterinarios: recortar contra él
+        castigaría al producto por no seguir a la inflación macro. Es la misma razón por la
+        que el recorte no rompe CP-INF-01, cuyo fixture usa exactamente esta rama.
+
+        La contracara, declarada: en esta rama el deflactor sigue sin cota. Sobre el
+        extract son las filas que no resuelven categoría — 1,4% — y ninguna de ellas está
+        entre las que explotaban.
         """
         meses = _meses("2024-01-01", 12)
         filas = _serie(1, meses, 100.0, 1.10)
-        filas[3] = (1, meses[3], 2.0, 0.02, 0.01)  # precio basura, revenue despreciable
+        filas[3] = (1, meses[3], 2.0, 0.02, 0.01)
         hechos = _hechos(filas)
 
         ajustado = TransformadorDeflacion(ipc=_ipc(meses)).ajustar(hechos, meses[-1])
-        salida = ajustado.transformar(hechos)
         deflactor = ajustado.deflactor_.set_index("anio_mes")["deflactor"]
 
-        assert deflactor[meses[3]] > 1_000, "el deflactor de esa fila es absurdo"
+        assert deflactor[meses[3]] > 1_000
 
-        aporte = salida.loc[salida["anio_mes"] == meses[3], "revenue_real"].item()
-        assert aporte < salida["revenue_real"].median(), (
-            "y sin embargo aporta menos que una fila normal: el deflactor gigante lo "
-            "compensa un revenue casi nulo, que es de donde salio el precio basura"
+    def test_un_desvio_creible_contra_la_categoria_no_se_toca(self):
+        """El recorte tiene que morder la cola, no la variación normal: sobre datos reales
+        `q` tiene mediana 0,980 y p99 2,22, y el límite es 10."""
+        meses = _meses("2024-01-01", 12)
+        vecinos = [_serie(p, meses, 100.0 * p, 1.10) for p in (2, 3, 4)]
+        # el producto 1 se encarece el doble que su categoría: creíble, no se toca
+        hechos = _hechos(_serie(1, meses, 100.0, 1.20), *vecinos)
+        catalogo = _catalogo({p: ("CLINICO", "ACME") for p in (1, 2, 3, 4)})
+
+        sin_acotar = TransformadorDeflacion(
+            catalogo=catalogo, ipc=_ipc(meses), limite_desvio=float("inf")
+        ).ajustar(hechos, meses[-1])
+        acotado = TransformadorDeflacion(catalogo=catalogo, ipc=_ipc(meses)).ajustar(
+            hechos, meses[-1]
         )
+
+        pd.testing.assert_frame_equal(sin_acotar.deflactor_, acotado.deflactor_)
 
     def test_un_producto_sin_ningun_precio_utilizable_queda_sin_ancla(self):
         """No se inventa un valor: queda `NaN` y la cobertura lo muestra."""

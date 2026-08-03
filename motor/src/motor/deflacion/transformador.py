@@ -79,7 +79,57 @@ con la que el EDA §4 midió el 74,6% de cobertura, así que cambiarla mueve ese
 NIVELES_CASCADA = ("categoria", "laboratorio", "ipc")
 """Orden de ADR-002. `ipc` es el fondo: siempre tiene todos los meses."""
 
+NIVELES_CONTRASTE = ("categoria", "laboratorio")
+"""Niveles contra los que se puede juzgar si el precio propio de un producto es creíble.
+
+**El IPC queda deliberadamente afuera.** Categoría y laboratorio se construyen con los
+relativos de los propios productos del cliente, así que un producto que se despega 10× de
+su categoría se está despegando de un espejo de sí mismo — eso es señal. El IPC es un
+índice macro externo que no tiene ninguna obligación de seguir precios veterinarios:
+despegarse de él es normal y no prueba nada.
+
+Distinguirlos es lo que hace que este recorte **no contradiga a ADR-002**. La cascada de
+ADR-002 sirve para *estimar un precio que falta*; esto es otra operación: *validar uno que
+se observó*. Por eso acá el orden de peldaños no aplica y el fondo de la cascada no sirve
+de contraste.
+"""
+
 ID_NIVEL_IPC = "nacional"
+
+LIMITE_DESVIO_NIVEL = 10.0
+"""Cuánto puede alejarse el deflactor de un producto del que da su nivel, en veces.
+
+`LIMITE_RELATIVO` protege el **índice**; esto protege el **deflactor directo**, que es el
+caso en que el producto sí tiene precio propio ese mes y por lo tanto no consulta ningún
+índice. Ahí `d = ancla / precio_propio` y un precio centinela lo hace explotar sin freno.
+
+**No se puede acotar `d` con una constante**, y está medido: su magnitud legítima crece con
+la distancia al corte, porque es inflación acumulada. La mediana va de 1,02 en el año en
+curso a 54,4 a ocho años, con p99 de 1,27 a 129 y máximos legítimos de ~560. Cualquier cota
+que atrape un deflactor absurdo de 2021 recorta inflación real de 2018.
+
+Lo que sí está acotado es el **desvío contra el nivel**, `q = d / d_nivel`: adimensional y
+sin dependencia de la distancia (mediana 0,980, p95 1,45, p99 2,22). Y a diferencia de
+`LIMITE_RELATIVO` —que tuvo que subir a 3 para dejar de reaccionar a dic-2023— `q` es
+inmune a los eventos macro, porque una devaluación mueve numerador y denominador juntos.
+
+El valor sale de la misma tabla que decidió `LIMITE_RELATIVO`, con el mismo criterio: la
+columna del peor mes.
+
+| límite | recorta | **peor mes** | deflactor máx | Δ revenue real |
+|---|---|---|---|---|
+| 3 | 1,877% | **17,21%** | 246,8 | +1,106% |
+| 5 | 1,123% | 8,81% | 308,6 | −0,164% |
+| **10** | **0,775%** | **2,51%** | **319,3** | **−0,322%** |
+| 20 | 0,626% | 2,34% | 421,1 | −0,135% |
+
+En 3 y en 5 muerde sistemáticamente en el tramo viejo de la serie, donde la base del índice
+encadenado es más floja; en 10 el peor mes cae al nivel del promedio y de ahí en más casi no
+cambia. Sobre el extract deja **0 filas con deflactor > 1.000**, contra 55 sin él.
+
+**Es una constante, no un cuantil de la corrida** — mismo motivo que `LIMITE_RELATIVO`:
+derivarla de los datos de cada corte haría que el umbral dependiera del futuro.
+"""
 
 
 class TransformadorDeflacion:
@@ -101,12 +151,14 @@ class TransformadorDeflacion:
         ventana_ancla: int = VENTANA_ANCLA_MESES,
         limite: float = LIMITE_RELATIVO,
         muestra_minima: int = MUESTRA_MINIMA,
+        limite_desvio: float = LIMITE_DESVIO_NIVEL,
     ) -> None:
         self.catalogo = catalogo
         self.ipc = ipc
         self.ventana_ancla = ventana_ancla
         self.limite = limite
         self.muestra_minima = muestra_minima
+        self.limite_desvio = limite_desvio
 
     def ajustar(self, hechos: pd.DataFrame, corte: pd.Timestamp) -> Self:
         """Calcula índices, anclas y deflactores usando **solo** datos ≤ `corte`.
@@ -280,25 +332,60 @@ class TransformadorDeflacion:
 
         precio_estimado = base["propio"] * factor
         ancla = self.ancla_.set_index("id_producto")["precio_prom_hoy"]
+        deflactor = pd.Series(
+            ancla.reindex(base["id_producto"]).to_numpy()
+            / precio_estimado.where(precio_estimado > 0).to_numpy(),
+            index=base.index,
+        )
 
         return pd.DataFrame(
             {
                 "id_producto": base["id_producto"].to_numpy(dtype="int64"),
                 "anio_mes": base["mes_hasta"].to_numpy(),
-                "deflactor": (
-                    ancla.reindex(base["id_producto"]).to_numpy()
-                    / precio_estimado.where(precio_estimado > 0).to_numpy()
-                ),
+                "deflactor": self._acotar_contra_nivel(base, deflactor).to_numpy(),
             }
         )
 
+    def _acotar_contra_nivel(self, base: pd.DataFrame, deflactor: pd.Series) -> pd.Series:
+        """Recorta el desvío del deflactor contra el de su nivel a `[1/L, L]`.
+
+        Se recorta `q = d / d_nivel` y se reconstruye `d = clip(q) × d_nivel`, en vez de
+        reemplazar por `d_nivel` a secas: el producto conserva la parte de su desvío que es
+        creíble, igual que `clampear` recorta el relativo en lugar de descartar el par.
+
+        **Solo se juzga contra `NIVELES_CONTRASTE`.** Una fila cuyo único nivel disponible
+        es el IPC queda **sin tocar**: sin espejo construido con precios del cliente no hay
+        desvío que medir, y recortar contra el IPC castigaría al producto por no seguir a la
+        inflación macro. Es también lo que mantiene intacta la garantía de CP-INF-01.
+        """
+        referencia = pd.DataFrame(
+            {
+                "id_producto": base["id_producto"],
+                "mes_desde": base["mes_hasta"],
+                "mes_hasta": self.corte_,
+            }
+        )
+        d_nivel, nivel = self._factor_cascada(referencia, niveles=NIVELES_CONTRASTE)
+
+        juzgable = d_nivel.notna() & (d_nivel > 0) & deflactor.notna() & nivel.notna()
+        if not juzgable.any():
+            return deflactor
+
+        q = deflactor[juzgable] / d_nivel[juzgable]
+        acotado = q.clip(1 / self.limite_desvio, self.limite_desvio) * d_nivel[juzgable]
+        return deflactor.mask(juzgable, acotado)
+
     # ---------------------------------------------------------------- cascada
 
-    def _factor_cascada(self, pares: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    def _factor_cascada(
+        self, pares: pd.DataFrame, niveles: tuple[str, ...] = NIVELES_CASCADA
+    ) -> tuple[pd.Series, pd.Series]:
         """`I_nivel(mes_hasta) / I_nivel(mes_desde)` por el primer nivel que responda.
 
         Args:
             pares: `id_producto`, `mes_desde`, `mes_hasta`.
+            niveles: peldaños a probar, en orden. El default es la cascada de ADR-002;
+                `_acotar_contra_nivel` pasa `NIVELES_CONTRASTE`, que excluye al IPC.
 
         Returns:
             `(factor, nivel_usado)`, ambos alineados al índice de `pares`. Un `NaN` en el
@@ -307,7 +394,7 @@ class TransformadorDeflacion:
         factor = pd.Series(np.nan, index=pares.index, dtype="float64")
         nivel_usado = pd.Series(None, index=pares.index, dtype="object")
 
-        for nivel in NIVELES_CASCADA:
+        for nivel in niveles:
             pendientes = factor.isna()
             if not pendientes.any():
                 break
