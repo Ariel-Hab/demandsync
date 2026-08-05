@@ -1,0 +1,495 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36" pages="11">
+  <diagram id="cuall" name="Vista General">
+    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="1840" pageHeight="980" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontStyle=1;fontSize=15;" value="Diagrama de Casos de Uso – CU-01 a CU-10" vertex="1">
+          <mxGeometry height="30" width="1400" x="40" y="-40" as="geometry" />
+        </mxCell>
+        <mxCell id="sys" parent="1" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;align=center;fillColor=none;strokeColor=#000000;fontStyle=1;fontSize=14;spacingTop=8;" value="DemandSync" vertex="1">
+          <mxGeometry height="920" width="680" x="260" as="geometry" />
+        </mxCell>
+        <mxCell id="aAna" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" value="Analista de Compras" vertex="1">
+          <mxGeometry height="80" width="40" x="60" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="uCom" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;fontStyle=2;" value="Usuario Comercial&#xa;{abstracto}" vertex="1">
+          <mxGeometry height="80" width="40" x="60" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="aVen" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" value="Vendedor" vertex="1">
+          <mxGeometry height="80" width="40" x="60" y="560" as="geometry" />
+        </mxCell>
+        <mxCell id="aAdm" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" value="Administrador" vertex="1">
+          <mxGeometry height="80" width="40" x="60" y="760" as="geometry" />
+        </mxCell>
+        <mxCell id="uc01" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" value="Autenticarse en el Sistema&#xa;(CU-01)" vertex="1">
+          <mxGeometry height="80" width="200" x="410" y="310" as="geometry" />
+        </mxCell>
+        <mxCell id="uc02" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" value="Consultar Dashboard Principal&#xa;(CU-02)" vertex="1">
+          <mxGeometry height="80" width="200" x="300" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc04" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" value="Consultar Segmentación de Clientes&#xa;(CU-04)" vertex="1">
+          <mxGeometry height="80" width="200" x="370" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="uc06" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" value="Consultar Alertas &lt;br&gt;de Vencimiento de Lotes &lt;br&gt;con Demanda Predicha&lt;br&gt;(CU-06)" vertex="1">
+          <mxGeometry height="80" width="200" x="670" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="uc05" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" value="Consultar Recomendaciones&lt;br&gt;&amp;nbsp;de Venta Cruzada&lt;br&gt;(CU-05)" vertex="1">
+          <mxGeometry height="80" width="200" x="610" y="520" as="geometry" />
+        </mxCell>
+        <mxCell id="uc07" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" value="Generar Borrador &lt;br&gt;de Orden de Compra&lt;br&gt;(CU-07)" vertex="1">
+          <mxGeometry height="80" width="200" x="690" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc09" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" value="Consultar Asistente &lt;br&gt;de Explicabilidad (RAG)&lt;br&gt;(CU-09)" vertex="1">
+          <mxGeometry height="80" width="200" x="640" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="uc08" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" value="Ejecutar Ingesta y &lt;br&gt;Preprocesamiento de Datos&lt;br&gt;(CU-08)" vertex="1">
+          <mxGeometry height="80" width="200" x="390" y="700" as="geometry" />
+        </mxCell>
+        <mxCell id="uc10" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" value="Gestionar Parámetros del Sistema&#xa;(CU-10)" vertex="1">
+          <mxGeometry height="80" width="200" x="390" y="800" as="geometry" />
+        </mxCell>
+        <mxCell id="comUc01" edge="1" parent="1" source="uCom" style="endArrow=none;html=1;strokeColor=#6c8ebf;strokeWidth=1.5;" target="uc01">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="comUc02" edge="1" parent="1" source="uCom" style="endArrow=none;html=1;strokeColor=#6c8ebf;strokeWidth=1.5;" target="uc02">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="comUc03" edge="1" parent="1" source="uCom" style="endArrow=none;html=1;strokeColor=#6c8ebf;strokeWidth=1.5;" target="uc03">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="comUc04" edge="1" parent="1" source="uCom" style="endArrow=none;html=1;strokeColor=#6c8ebf;strokeWidth=1.5;" target="uc04">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="comUc05" edge="1" parent="1" source="uCom" style="endArrow=none;html=1;strokeColor=#6c8ebf;strokeWidth=1.5;" target="uc05">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="comUc09" edge="1" parent="1" source="uCom" style="endArrow=none;html=1;strokeColor=#6c8ebf;strokeWidth=1.5;" target="uc09">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="anaUc06" edge="1" parent="1" source="aAna" style="endArrow=none;html=1;strokeColor=#9673a6;strokeWidth=1.5;" target="uc06">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="anaUc07" edge="1" parent="1" source="aAna" style="endArrow=none;html=1;strokeColor=#9673a6;strokeWidth=1.5;" target="uc07">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="genAna" edge="1" parent="1" source="aAna" style="endArrow=block;endFill=0;html=1;strokeColor=#000000;" target="uCom" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="genVen" edge="1" parent="1" source="aVen" style="endArrow=block;endFill=0;html=1;strokeColor=#000000;" target="uCom" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="admUc01" edge="1" parent="1" source="aAdm" style="endArrow=none;html=1;strokeColor=#b85450;strokeWidth=1.5;" target="uc01">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="admUc08" edge="1" parent="1" source="aAdm" style="endArrow=none;html=1;strokeColor=#b85450;strokeWidth=1.5;" target="uc08">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="admUc10" edge="1" parent="1" source="aAdm" style="endArrow=none;html=1;strokeColor=#b85450;strokeWidth=1.5;" target="uc10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r1" edge="1" parent="1" source="uc01" style="endArrow=open;dashed=1;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#ffffff;" target="uc02" value="«include»">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" edge="1" parent="1" source="uc03" style="endArrow=open;dashed=1;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#ffffff;" target="uc02" value="«extend»">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r3" edge="1" parent="1" source="uc03" style="endArrow=open;dashed=1;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#ffffff;" target="uc02" value="«extend»">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r4" edge="1" parent="1" source="uc07" style="endArrow=open;dashed=1;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#ffffff;" target="uc03" value="«extend»">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r5" edge="1" parent="1" source="uc05" style="endArrow=open;dashed=1;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#ffffff;" target="uc04" value="«extend»">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r6" edge="1" parent="1" source="uc09" style="endArrow=open;dashed=1;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#ffffff;" target="uc05" value="«extend»">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r7" edge="1" parent="1" source="uc07" style="endArrow=open;dashed=1;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#ffffff;" target="uc06" value="«extend»">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r8" edge="1" parent="1" source="uc09" style="endArrow=open;dashed=1;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#ffffff;" target="uc06" value="«extend»">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="8bXcbI6E2_sJ05eM5_1H-1" edge="1" parent="1" source="uc06" style="endArrow=open;dashed=1;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#ffffff;" target="uc03" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="935" y="300" as="sourcePoint" />
+            <mxPoint x="635" y="160" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="uc03" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" value="Consultar Predicción de Demanda&#xa;(CU-03)" vertex="1">
+          <mxGeometry height="80" width="200" x="500" y="160" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="cu01" name="CU-01">
+    <mxGraphModel dx="1000" dy="620" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1020" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="CU-01: Autenticarse en el Sistema" style="text;html=1;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="8" width="900" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sys" value="DemandSync" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;align=center;fillColor=none;strokeColor=#000000;fontStyle=1;fontSize=14;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="440" y="40" width="540" height="480" as="geometry" />
+        </mxCell>
+        <mxCell id="focus" value="Autenticarse en el Sistema&#xa;(CU-01)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="470" y="235" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel2" value="Consultar Dashboard Principal&#xa;(CU-02)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="235" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="a0" value="Analista de Compras" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="90" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="Vendedor" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="240" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" value="Administrador" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="390" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="as0" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a0" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as1" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a1" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as2" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a2" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="«include»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="focus" target="rel2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="cu02" name="CU-02">
+    <mxGraphModel dx="1000" dy="620" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1020" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="CU-02: Consultar Dashboard Principal" style="text;html=1;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="8" width="900" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sys" value="DemandSync" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;align=center;fillColor=none;strokeColor=#000000;fontStyle=1;fontSize=14;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="440" y="40" width="540" height="480" as="geometry" />
+        </mxCell>
+        <mxCell id="focus" value="Consultar Dashboard Principal&#xa;(CU-02)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="470" y="235" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel1" value="Autenticarse en el Sistema&#xa;(CU-01)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="115" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel3" value="Consultar Predicción de Demanda&#xa;(CU-03)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="235" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel6" value="Consultar Alertas de Vencimiento de Lotes con Demanda Predicha&#xa;(CU-06)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="355" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="a0" value="Analista de Compras" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="165" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="Vendedor" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="315" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="as0" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a0" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as1" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a1" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="«include»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="rel1" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="«extend»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="rel3" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="«extend»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="rel6" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="cu03" name="CU-03">
+    <mxGraphModel dx="1000" dy="620" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1020" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="CU-03: Consultar Predicción de Demanda" style="text;html=1;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="8" width="900" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sys" value="DemandSync" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;align=center;fillColor=none;strokeColor=#000000;fontStyle=1;fontSize=14;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="440" y="40" width="540" height="480" as="geometry" />
+        </mxCell>
+        <mxCell id="focus" value="Consultar Predicción de Demanda&#xa;(CU-03)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="470" y="235" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel2" value="Consultar Dashboard Principal&#xa;(CU-02)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="175" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel7" value="Generar Borrador de Orden de Compra&#xa;(CU-07)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="295" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="a0" value="Analista de Compras" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="165" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="Vendedor" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="315" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="as0" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a0" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as1" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a1" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="«extend»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="focus" target="rel2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="«extend»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="rel7" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="cu04" name="CU-04">
+    <mxGraphModel dx="1000" dy="620" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1020" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="CU-04: Consultar Segmentación de Clientes" style="text;html=1;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="8" width="900" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sys" value="DemandSync" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;align=center;fillColor=none;strokeColor=#000000;fontStyle=1;fontSize=14;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="440" y="40" width="540" height="480" as="geometry" />
+        </mxCell>
+        <mxCell id="focus" value="Consultar Segmentación de Clientes&#xa;(CU-04)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="470" y="235" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel5" value="Consultar Recomendaciones de Venta Cruzada&#xa;(CU-05)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="235" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="a0" value="Analista de Compras" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="165" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="Vendedor" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="315" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="as0" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a0" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as1" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a1" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="«extend»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="rel5" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="cu05" name="CU-05">
+    <mxGraphModel dx="1000" dy="620" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1020" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="CU-05: Consultar Recomendaciones de Venta Cruzada" style="text;html=1;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="8" width="900" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sys" value="DemandSync" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;align=center;fillColor=none;strokeColor=#000000;fontStyle=1;fontSize=14;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="440" y="40" width="540" height="480" as="geometry" />
+        </mxCell>
+        <mxCell id="focus" value="Consultar Recomendaciones de Venta Cruzada&#xa;(CU-05)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="470" y="235" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel4" value="Consultar Segmentación de Clientes&#xa;(CU-04)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="175" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel9" value="Consultar Asistente de Explicabilidad (RAG)&#xa;(CU-09)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="295" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="a0" value="Vendedor" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="165" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="Analista de Compras" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="315" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="as0" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a0" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as1" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a1" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="«extend»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="focus" target="rel4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" value="«extend»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="rel9" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="cu06" name="CU-06">
+    <mxGraphModel dx="1000" dy="620" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1020" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="CU-06: Consultar Alertas de Vencimiento de Lotes con Demanda Predicha" style="text;html=1;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="8" width="900" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sys" value="DemandSync" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;align=center;fillColor=none;strokeColor=#000000;fontStyle=1;fontSize=14;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="440" y="40" width="540" height="480" as="geometry" />
+        </mxCell>
+        <mxCell id="focus" value="Consultar Alertas de Vencimiento de Lotes con Demanda Predicha&#xa;(CU-06)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="470" y="235" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel2" value="Consultar Dashboard Principal&#xa;(CU-02)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="115" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel7" value="Generar Borrador de Orden de Compra&#xa;(CU-07)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="235" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel9" value="Consultar Asistente de Explicabilidad (RAG)&#xa;(CU-09)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="355" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="a0" value="Analista de Compras" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="240" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="as0" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a0" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="«extend»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="focus" target="rel2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="«extend»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="rel7" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" value="«extend»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="rel9" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="cu07" name="CU-07">
+    <mxGraphModel dx="1000" dy="620" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1020" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="CU-07: Generar Borrador de Orden de Compra" style="text;html=1;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="8" width="900" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sys" value="DemandSync" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;align=center;fillColor=none;strokeColor=#000000;fontStyle=1;fontSize=14;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="440" y="40" width="540" height="480" as="geometry" />
+        </mxCell>
+        <mxCell id="focus" value="Generar Borrador de Orden de Compra&#xa;(CU-07)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="470" y="235" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel3" value="Consultar Predicción de Demanda&#xa;(CU-03)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="175" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel6" value="Consultar Alertas de Vencimiento de Lotes con Demanda Predicha&#xa;(CU-06)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="295" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="a0" value="Analista de Compras" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="240" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="as0" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a0" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="«extend»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="focus" target="rel3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="«extend»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="focus" target="rel6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="cu08" name="CU-08">
+    <mxGraphModel dx="1000" dy="620" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1020" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="CU-08: Ejecutar Ingesta y Preprocesamiento de Datos" style="text;html=1;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="8" width="900" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sys" value="DemandSync" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;align=center;fillColor=none;strokeColor=#000000;fontStyle=1;fontSize=14;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="440" y="40" width="540" height="480" as="geometry" />
+        </mxCell>
+        <mxCell id="focus" value="Ejecutar Ingesta y Preprocesamiento de Datos&#xa;(CU-08)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="470" y="235" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="a0" value="Administrador" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="240" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="as0" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a0" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="cu09" name="CU-09">
+    <mxGraphModel dx="1000" dy="620" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1020" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="CU-09: Consultar Asistente de Explicabilidad (RAG)" style="text;html=1;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="8" width="900" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sys" value="DemandSync" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;align=center;fillColor=none;strokeColor=#000000;fontStyle=1;fontSize=14;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="440" y="40" width="540" height="480" as="geometry" />
+        </mxCell>
+        <mxCell id="focus" value="Consultar Asistente de Explicabilidad (RAG)&#xa;(CU-09)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="470" y="235" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel5" value="Consultar Recomendaciones de Venta Cruzada&#xa;(CU-05)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="175" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rel6" value="Consultar Alertas de Vencimiento de Lotes con Demanda Predicha&#xa;(CU-06)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="750" y="295" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="a0" value="Vendedor" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="165" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="Analista de Compras" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="315" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="as0" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a0" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="as1" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a1" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="«extend»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="focus" target="rel5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="«extend»" style="endArrow=open;dashed=1;html=1;strokeColor=#000000;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="focus" target="rel6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="cu10" name="CU-10">
+    <mxGraphModel dx="1000" dy="620" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1020" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="CU-10: Gestionar Parámetros del Sistema" style="text;html=1;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="8" width="900" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sys" value="DemandSync" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;align=center;fillColor=none;strokeColor=#000000;fontStyle=1;fontSize=14;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="440" y="40" width="540" height="480" as="geometry" />
+        </mxCell>
+        <mxCell id="focus" value="Gestionar Parámetros del Sistema&#xa;(CU-10)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="470" y="235" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="a0" value="Administrador" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="240" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="as0" style="endArrow=none;html=1;strokeColor=#000000;" edge="1" parent="1" source="a0" target="focus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
