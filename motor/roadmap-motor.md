@@ -538,7 +538,7 @@ corrida que los produjo.
 | # | Unidad de trabajo | Semana | Entregable / gate |
 |---|---|---|---|
 | **M2.1** | **Transformador de deflación (ADR-002)**: ancla por producto + índices de nivel (media geométrica ponderada) + fallback categoría → laboratorio → IPC + clamp de ratios. Los casos CP-INF-01..05 se escriben como tests unitarios del transformador | S5 | Componente reutilizable + tests CP-INF-*; el fallback se testea con la misma prioridad que el ancla directa (lo necesita el 25,4% de los productos — EDA §4); **test propio del precio implícito no utilizable** — 4.848 filas reales NaN por `unidades == 0` y 22 con precio ≤ 0 por signos cruzados (§5.5 #6). **CERRADA** ✅ 2026-07-31 — `motor.deflacion`, 67 tests, cobertura de ancla 73,2% contra el 74,6% del EDA §4 (§6.1, §6.2) |
-| **M2.2** | Features: lags (1,2,3,6,12), rolling means (3,6,12), mes del año, `mismo_mes_año_anterior`, categoría/familia/laboratorio, `CLIENTE_FEATURE`, precio real deflactado y su variación | S5–S6 | Construcción de features pasando el test M1.3. **Precondición T0.4: cumplida** ✅ 2026-07-31 — `CLIENTE_FEATURE` ya sale con 32 versiones y el arnés la recorta por `fecha_calculo <= corte`; la categoría ya es una de las 12 reales, con `SIN CATEGORIA` al 22% y una categoría de un solo producto para el encoding (§12.1) |
+| **M2.2** | Features: lags (1,2,3,6,12), rolling means (3,6,12), mes del año, categoría/laboratorio, escala de precio (ancla) y **precio relativo al nivel** con su variación. *(Tres correcciones a la lista original, medidas: ver §6.3 y ADR-013)* | S5–S6 | **✅ CERRADA 2026-08-04** — `motor/src/motor/features/`: `especificacion.py` (lo que ejecuta `mlforecast`) + `precio.py` + `construccion.py`. Pasa la red de M1.3 (`pytest -m innegociable`). **274 tests**, `ruff` limpio; las **7 mutaciones caen**. Validado a escala real en 3 cortes: cobertura 0,9899 sobre filas con precio propio, CV intra-producto 0,1511, **2,5 s** sobre 116k filas |
 | **M2.3** | LightGBM global con `mlforecast`, **multi-horizonte directo** (un modelo por h ∈ {1,3,6,12}) | S6–S7 | Corre dentro del arnés, comparable 1:1 con el piso |
 | **M2.4** | Intervalos: quantile regression P10/P50/P90 | S7 | Cobertura empírica de los intervalos reportada (¿el P10–P90 cubre ~80%?) |
 | **M2.5** | **Champion/challenger por serie** + reporte comparativo contra el piso congelado, sobre sintético **y** real | S8 | `motor/backtests/global-vs-baselines-<fecha>.md` |
@@ -722,12 +722,96 @@ amplió de 3 a 8 productos porque con 3 y muestra mínima 3 el índice de catego
 en el mes 10 y la variante `indices_` comparaba dos tablas casi vacías — pasaba sin probar
 nada, y también eso salió de la mutación.
 
+### 6.3 M2.2 cerrada — y tres correcciones a la lista de features (2026-08-04)
+
+`motor/src/motor/features/`, **274 tests**, `ruff` limpio. El gate —que la construcción pase
+la red anti-leakage de M1.3— está cubierto por `test_construir_features_no_mira_el_futuro`,
+marcado `innegociable`.
+
+**El cambio de plan (CLAUDE.md §6.4).** Antes de escribir una línea se midió la lista de
+features de `plan-diseno.md` §M2 sobre el extract real, y **tres de sus ítems no
+sobrevivieron la medición**. Los dos primeros son **ADR-013**.
+
+| # | Qué decía la lista | Qué se midió | Qué quedó |
+|---|---|---|---|
+| 1 | "precio real deflactado **y su variación**" | `precio_prom × deflactor = ancla` en el **99,15%** de las filas con precio propio; CV intra-producto **0,0000** contra 1,2809 del nominal | Es una identidad, no una medición: `d = ancla/P̂` y con precio propio `P̂ = precio_prom`. Se reemplaza por el **precio relativo al nivel** |
+| 2 | (implícito) montos deflactados como features | `revenue_real = unidades × ancla` en el **99,13%** | El target reescalado por una constante por serie. **Ninguna feature monetaria deflactada entra a grano producto** |
+| 3 | `mismo_mes_año_anterior` | A grano mensual **es** `lag 12` | Se saca: estaba duplicado |
+| 4 | `CLIENTE_FEATURE` | El extract real **no tiene** cliente×producto ni `cliente_feature` — solo el sintético | **Diferida a M3.2** |
+
+**Por qué el #4 se difiere y no se construye igual.** Se podría agregar a grano producto y
+cumplir la letra de M2.2, pero entonces la corrida real de M2.5 tendría **una feature menos
+que la sintética** y el champion/challenger compararía dos configuraciones distintas. M3.2 ya
+es el hito a grano cliente×producto, que es donde la feature es nativa. El hook
+`tablas_auxiliares` del arnés (construido en M1.0 (9) justamente para esto) queda como está,
+con su test: espera a M3.2. **Anotado en M3.2, no como pendiente suelto.**
+
+**La feature que reemplaza al precio deflactado, medida antes de elegirla:**
+`precio_rel_nivel_t = precio_prom_t × I_nivel(corte)/I_nivel(t) / ancla`, o sea el precio del
+producto llevado a pesos del corte **con el índice de su nivel** y no con el suyo. CV
+intra-producto **0,1511** (p25 0,1056, p90 0,5098) sobre 1.680 productos con ≥12 meses, y la
+variación a 3 meses reparte entre −0,216 (p5) y +0,237 (p95) **sin una sola fila en cero**.
+
+**Es feature de forma, no de nivel**, y conviene tenerlo escrito porque el signo se lee al
+revés: el nivel arrastra una constante por producto (el ancla es promedio de 3 meses, no el
+precio del corte), así que "vale 1" es aproximado; lo exacto es que un producto que se movió
+**igual que su categoría** tiene la serie **plana**, y uno que se **encareció** contra ella la
+tiene **creciente** — porque en el pasado estaba relativamente más barato de lo que está hoy.
+
+**Decisión de arquitectura: los lags los ejecuta `mlforecast`, M2.2 los especifica.**
+Verificado contra `mlforecast 0.15.1`: `lags`/`lag_transforms`/`date_features` en el
+constructor, `static_features` y `max_horizon` (multi-horizonte directo) en `fit`. Como las
+features de este paquete son **estado en el origen del pronóstico** —constantes por serie
+dentro de un corte— entran como `static_features` y **ninguna feature exógena necesita valor
+futuro**, que es el problema que hunde a los modelos con exógenas dinámicas: el precio de
+`corte+h` no se conoce.
+
+**Cobertura medida (3 cortes, extract real):**
+
+| corte | filas | `precio_rel_nivel` | `var_3m` | `var_12m` | `precio_ancla` |
+|---|---|---|---|---|---|
+| 2024-11 | 107.294 | 0,9567 | 0,8674 | 0,7379 | 0,9996 |
+| 2025-05 | 116.492 | 0,9569 | 0,8702 | 0,7461 | 0,9995 |
+| 2026-04 | 133.833 | 0,9563 | 0,8724 | 0,7578 | 1,0000 |
+
+Corre en **2,5 s** sobre 116k filas. Sobre las filas con precio propio utilizable la
+cobertura es **0,9899**; el resto del hueco son los meses de neto cero (3,53% real), donde no
+hay precio observado. **`var_12m` pierde un cuarto del panel** y es esperable: pide el mismo
+mes del año anterior, que las series jóvenes y las intermitentes no tienen. Nada se imputa.
+
+**Dos propiedades que salieron de la implementación y hay que conocer antes de M2.3:**
+
+- **El primer mes de cada panel nunca tiene `precio_rel_nivel`.** El índice de un nivel se
+  construye con pares de meses *consecutivos*, así que el primer mes no tiene relativo y no
+  hay contra qué medirse. Es propiedad, no defecto, y está fijada en un test.
+- **Reusar un `TransformadorDeflacion` ajustado a otro corte es leakage que la red de M1.3
+  NO vería**, porque llegaría contaminado desde afuera. Por eso `construir_features` corta si
+  el corte no coincide.
+
+**Verificación por mutación — las 7 caen.** Rompiendo a propósito: el recorte al corte (cae
+la red de M1.3), el contraste contra `NIVELES_CONTRASTE` (aparece el IPC), el alineado por
+calendario (pasa a `shift` por filas), la guarda del transformador ajeno, la máscara
+`es_utilizable`, la guarda de ancla ≤ 0 y la validación de grano.
+
+> **Dos de los tests no cazaban nada en su primera versión, y la mutación lo mostró** — vale
+> anotarlo porque es la misma lección de siempre en otra forma. (a) El del alineado por
+> calendario usaba un producto que crecía **igual que su categoría**, así que su
+> `precio_rel_nivel` era 1,0 en todos los meses y alinear por filas o por calendario daba el
+> mismo número; encima el mes de comparación era el primero del panel, que es nulo por la
+> propiedad de arriba. (b) El de precios negativos usaba un producto **sin ancla**, así que
+> el `NaN` venía de ahí y no de la máscara que decía probar. Los dos pasaban en verde. Un
+> fixture mal armado no falla: **confirma**.
+
+**Deuda anotada, no bloqueante:** `datasets/` sigue fuera del gate de `ruff` (§12.1), y el
+sintético no tiene aún altas de cliente, que es lo que M3.2 va a necesitar junto con
+`CLIENTE_FEATURE`.
+
 ## 7. M3 — Jerarquía, cliente y segmentos · S9–S12
 
 | # | Unidad de trabajo | Semana | Entregable / gate |
 |---|---|---|---|
 | **M3.1** | Reconciliación total → categoría → laboratorio → producto con `hierarchicalforecast`; bottom-up vs MinT **elegido por backtest**, no por preferencia | S9 | Forecasts coherentes; ganancia por nivel documentada |
-| **M3.2** | Nivel cliente×producto: **P(compra en h)** (clasificación binaria LightGBM, mismas features) + tamaño esperado condicional. Es el output honesto: solo ~12% de los 319k pares tiene ≥12 meses de señal (EDA §5) | S10–S11 | Ranking de propensión; alimenta venta cruzada y redistribución (R3) |
+| **M3.2** | Nivel cliente×producto: **P(compra en h)** (clasificación binaria LightGBM, mismas features) + tamaño esperado condicional. Es el output honesto: solo ~12% de los 319k pares tiene ≥12 meses de señal (EDA §5). **Recibe `CLIENTE_FEATURE`, diferida acá desde M2.2** (§6.3) | S10–S11 | Ranking de propensión; alimenta venta cruzada y redistribución (R3). **Dos precondiciones que hay que resolver acá y no antes:** (a) el **extract real no tiene cliente×producto** — o se extiende `extraer_snap.py` (túnel SSH, ~319k pares × 96 meses, mucho más pesado que lo de hoy) o M3.2 se valida solo en sintético, y eso se decide con el número de costo en la mano; (b) el generador **no modela altas ni bajas de cliente** (§12.1, deuda abierta de T0.4), así que hoy no ejercita el arranque en frío de un cliente nuevo — que es justo lo que pide M3.4 |
 | **M3.3** | Clustering RFM propio sobre montos **deflactados** (CP-INF-04), versionado por corrida; contraste contra la segmentación operacional DFV (CP-SEG-01) | S11 | Matriz de contingencia cluster × `segmento_operacional`; `cluster_id` **no** entra como feature (ADR-005) |
 | **M3.4** | Clientes nuevos (< 6 meses): prior del segmento operacional más cercano | S12 | Regla explícita y testeada |
 
@@ -765,7 +849,7 @@ nada, y también eso salió de la mutación.
 | S4 | M1 | **Piso real congelado** (máquina autorizada) | M1.8 | ✅ **2026-08-03 — re-congelado** (§5.6.1): `backtests/baselines-real-2026-08-03.md`, corrida `a79a9b23676b`, 2.128 productos × 18 cortes (2024-11..2026-04) × h=12 en 294 min con `n_jobs=4` sobre `C:/dfv-extract-v2`. WAPE **0,287 / 0,128 / 0,103** (producto/categoría/total, h=1). Cobertura < 1 explicada al 100% en **dos** componentes (§5.6.1 punto 5): 69% altas de catálogo + **31% horizonte truncado por historia corta**, que es artefacto de la selección retrospectiva y corrige el "100% altas" que se reportó en §5.6. **Descompuesto contra la corrida anterior** reusando los checkpoints de ambas: el filtro de obsequios de ADR-012 **no movió el piso** (0,2939 → 0,2933), lo movía **el mes incompleto**; y al sacarlo se destapa un **sesgo total de −5,2% a h=6 y −6,0% a h=12, fuera del ±5% de M2** — el −1,4% de la corrida vieja era artefacto. La primera corrida (`f7af767ca7e6`, 2026-07-31) queda como registro histórico, no como referencia |
 | S4 | M1 | **Regla de universo: obsequios y descontinuados** (corrección de M1.8a) | M1.8b | ✅ 2026-08-02 — **ADR-012**. `UMBRAL_PRECIO_OBSEQUIO = 0,05` a nivel renglón + `detectar_meses_incompletos()` contra la réplica atrasada. Universo 2.189 → **2.128**, extract 137.399 → **135.409** filas. **248 tests**, `ruff` limpio; los 9 nuevos verificados por mutación. **Deja al piso de M1.8 pendiente de re-congelar** (§5.5.1) |
 | S4–S5 | — | Deuda del generador (precondición de M2.2, no bloquea M1) | T0.4 | ✅ 2026-07-31 (23 tests) |
-| S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | 🟡 M2.1 ✅ 2026-07-31 (67 tests) |
+| S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | ✅ **M2.1** 2026-07-31 (67 tests) · **M2.2** 2026-08-04 — `motor/src/motor/features/`, gate de M1.3 cubierto (`pytest -m innegociable`), **274 tests**, `ruff` limpio, **7/7 mutaciones caen**. Validada a escala real en 3 cortes (cobertura 0,9899 sobre filas con precio propio; 2,5 s / 116k filas). **Tres correcciones a la lista de features** en §6.3 → **ADR-013**: el precio deflactado a grano producto es el ancla (identidad, CV 0,0000) y `revenue_real` es el target reescalado, así que la señal pasa a ser el **precio relativo al nivel**; `mismo_mes_año_anterior` era `lag 12`; **`CLIENTE_FEATURE` se difiere a M3.2** porque el extract real no tiene cliente×producto |
 | S7 | M2 | LightGBM global · cuantiles | M2.3–M2.4 | ⬜ |
 | S8 | M2 | **Champion/challenger vs piso** | M2.5 | ⬜ |
 | S9 | M3 | Reconciliación jerárquica | M3.1 | ⬜ |

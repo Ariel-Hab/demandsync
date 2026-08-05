@@ -377,6 +377,23 @@ class TransformadorDeflacion:
 
     # ---------------------------------------------------------------- cascada
 
+    def factor_de_nivel(
+        self, pares: pd.DataFrame, niveles: tuple[str, ...] = NIVELES_CONTRASTE
+    ) -> tuple[pd.Series, pd.Series]:
+        """Cuánto se movió el **nivel** de cada producto entre `mes_desde` y `mes_hasta`.
+
+        Es la cara pública de `_factor_cascada`, y existe porque las features de precio de
+        M2.2 necesitan exactamente este factor: el movimiento del vecindario de un producto,
+        contra el cual se juzga si su propio precio subió más o menos. Sin esto,
+        `motor.features` tendría que importar un privado de este módulo o reimplementar la
+        cascada, que es la forma habitual de que dos definiciones se separen en silencio.
+
+        El default es `NIVELES_CONTRASTE` y no la cascada completa, porque el caso de uso es
+        **contrastar** (validar un precio observado) y no **estimar** uno que falta — la
+        misma distinción que documenta `NIVELES_CONTRASTE`.
+        """
+        return self._factor_cascada(pares, niveles=niveles)
+
     def _factor_cascada(
         self, pares: pd.DataFrame, niveles: tuple[str, ...] = NIVELES_CASCADA
     ) -> tuple[pd.Series, pd.Series]:

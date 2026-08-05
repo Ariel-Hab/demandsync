@@ -44,7 +44,8 @@
 
 ### M2 — Deflación + modelo global ML
 - Implementar ancla + índices de nivel + fallback + clamp (ADR-002) como transformador reutilizable, con el cuidado de leakage descrito abajo.
-- `mlforecast` + LightGBM global: lags (1,2,3,6,12), rolling means (3,6,12), mes del año, `mismo_mes_año_anterior`, categoría/laboratorio, features de cliente (`CLIENTE_FEATURE`), precio real deflactado y su variación.
+- `mlforecast` + LightGBM global: lags (1,2,3,6,12), rolling means (3,6,12), mes del año, categoría/laboratorio, escala de precio (ancla) y **precio relativo a su nivel** con su variación (3m/12m).
+  - ⚠️ **Tres correcciones a esta lista, medidas en M2.2 (2026-08-04) — ver `roadmap-motor.md` §6.3 y ADR-013.** (a) *"Precio real deflactado y su variación"* a grano producto **es una constante y una columna de ceros**: `precio_prom × d = ancla` por construcción (99,15% de las filas reales, CV 0,0000). La señal está en el precio contra el índice de su nivel, y por eso la lista dice eso ahora. Lo mismo con los montos: `revenue_real = unidades × ancla`, o sea el target reescalado. (b) `mismo_mes_año_anterior` se sacó porque a grano mensual **es** `lag 12`, que ya está en la lista. (c) **`CLIENTE_FEATURE` se difiere a M3.2**: el extract real no tiene cliente×producto, así que en M2 solo se podría ejercitar en sintético y M2.5 compararía una corrida real con una feature menos que la sintética.
 - Quantile regression (P10/P50/P90) para intervalos.
 - **Criterio de promoción:** el global ML reemplaza al baseline **solo en las series/niveles donde le gana en backtest** (champion/challenger por serie). Antes de aplicarlo hay que resolver que las dos partes se midan igual: el piso de M1 tiene selección retrospectiva (ver M1 arriba y `roadmap-motor.md` §12.5), así que comparado contra un global prospectivo la cancha está inclinada en contra del global.
 

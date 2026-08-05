@@ -7,6 +7,12 @@ Dónde muerde, en concreto:
 
 - **Features de precio de M2.2** — una variación nominal es inflación; una *real* es señal
   de demanda (si algo aumenta, se vende menos). Sin deflactar, esa señal se pierde.
+  **Con un matiz que M2.2 midió y conviene tener acá:** la feature no puede ser el precio
+  deflactado con el deflactor *del propio producto*, porque eso devuelve el ancla — `d =
+  ancla/P̂` y con precio propio utilizable `P̂ = precio_prom`, así que el producto se
+  cancela (99,15% de las filas reales, CV intra-producto 0,0000). La señal está en el
+  precio contra el índice de **su nivel**, que es lo que construye `motor.features.precio`.
+  Ver **ADR-013**.
 - **RFM de M3.3** (`valor_monetario`, CP-INF-04) — sin deflactar, los años recientes
   aplastan a los viejos y el clustering termina segmentando por *cuándo* compró el cliente.
 - **`valor_anual_estimado`** de `CLIENTE_FEATURE`.
@@ -165,21 +171,31 @@ pytest -m innegociable     # corré esto antes de tocar cualquier cosa de acá
 > mantiene pura a `indice_de_nivel` frente a quien la llame sin recortar antes. Lo detecta
 > `test_agregar_meses_futuros_no_cambia_el_indice_de_los_meses_previos`.
 
-## Limitación conocida: el clamp no cubre el deflactor directo
+## El deflactor directo, y cómo quedó acotado (cerrado 2026-08-02)
 
-El clamp protege el índice *de nivel*. Cuando el producto **sí** tiene precio propio ese
-mes, el deflactor es `ancla / precio_propio` y un precio basura de $0,01 lo hace explotar:
-sobre el extract son **93 filas de 7 productos** (0,068%) con deflactor de hasta 1,2
-millones.
+El clamp de `LIMITE_RELATIVO` protege el índice *de nivel*. Cuando el producto **sí** tiene
+precio propio ese mes, el deflactor es `ancla / precio_propio` y no consulta ningún índice,
+así que un precio centinela de $0,01 lo hacía explotar: eran **93 filas de 7 productos**
+(0,068%) con deflactor de hasta 1,2 millones.
 
-No mueve nada monetario —aportan 1,3 M sobre 294.733 M de revenue real, o sea 0,000%,
-porque su revenue también es ≈ 0— y por eso no se tocó dentro de M2.1: arreglarlo bien
-exige elegir **otro** umbral con su propia medición, y no se inventa una constante para
-corregir un 0,000%. Pero la columna `deflactor` queda con valores sin sentido, y **eso sí
-importa para las features de M2.2**.
+Se cerró en dos pasos, y el orden importa porque el segundo solo sirve después del primero:
 
-Está fijado en `test_un_precio_propio_basura_infla_su_deflactor_pero_no_mueve_el_agregado`,
-que asegura las dos mitades del hecho. **Decidir antes de M2.2.**
+1. **La causa raíz era el universo, no el transformador** — obsequios facturados con un
+   centinela de $0,01 que el extract nunca filtró (**ADR-012**, M1.8b). Sacándolos, el
+   deflactor máximo bajó de 1.227.361 a **13.821**. No alcanzó: quedaban 55 filas > 1.000
+   por precios de $0,07–$0,10, otro centinela apenas arriba del umbral.
+2. **`LIMITE_DESVIO_NIVEL = 10`**, que acota `q = d / d_nivel` contra `NIVELES_CONTRASTE`.
+   Resultado sobre el extract: **0 filas con deflactor > 1.000**, máximo **319**, revenue
+   real total −0,32%.
+
+No se puede acotar `d` con una constante y está medido: su magnitud legítima crece con la
+distancia al corte (mediana 1,02 en el año en curso, 54,4 a ocho años). Lo acotable es el
+**desvío contra el nivel**, que es adimensional e inmune a los eventos macro — una
+devaluación mueve numerador y denominador juntos. El detalle de por qué el IPC queda afuera
+del contraste está en el docstring de `LIMITE_DESVIO_NIVEL`.
+
+**La contracara, declarada:** en la rama sin categoría ni laboratorio el deflactor sigue sin
+cota. Sobre el extract es el 1,4% de las filas, y ninguna de las que explotaban cae ahí.
 
 ## La validación que más convence
 
