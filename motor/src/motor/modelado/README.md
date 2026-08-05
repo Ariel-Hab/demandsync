@@ -50,17 +50,30 @@ La tabla congelable se genera con
 [`../../../scripts/congelar_baselines_sintetico.py`](../../../scripts/congelar_baselines_sintetico.py),
 que orquesta exactamente eso más el reporte y sus desagregados.
 
-## El piso que sale de acá es optimista — leer antes de compararlo con nada
+## Dos criterios de selección, y el que vale para comparar es el prospectivo
 
 `elegir_mejor_por_serie` elige el ganador con el MASE de **todos** los cortes y lo aplica
 también a los más viejos: la elección de *qué modelo* usar mira información posterior a
-las filas donde se mide. Es lo que pide `plan-diseno.md` §M1, pero **no es prospectivo**,
-así que el piso queda más alto que el de un pipeline que eligiera en cada corte con datos
-≤ corte.
+las filas donde se mide. No es el leakage de M1.3 —cada predicción individual sigue viendo
+solo historia ≤ corte— pero **no es prospectivo**, y el piso que produce queda más alto que
+el de un pipeline real.
 
-No es el leakage de M1.3 —cada predicción individual sigue viendo solo historia ≤ corte—
-pero sí desnivela la comparación de M2.5 contra el modelo global. La decisión de cómo
-nivelar está anotada en `roadmap-motor.md` §12.5 y **hay que tomarla antes de M2.5**.
+**Resuelto en M1.9 (ADR-016).** `elegir_mejor_por_corte` reelige el ganador en cada corte
+usando solo el error cuyo mes objetivo ya ocurrió, y `armar_reporte_con_cascada` baja al
+siguiente candidato disponible cuando el elegido no cubre una celda. Medido sobre la misma
+corrida, sin reajustar un solo modelo:
+
+| | WAPE producto h=1 | cobertura h=12 | sesgo total h=6 |
+|---|---|---|---|
+| retrospectiva | 0,2870 | 0,8880 | −0,0517 |
+| **prospectiva + cascada** | **0,3305** | **0,9104** | **−0,0100** |
+
+Peor WAPE, más cobertura, sesgo dentro del ±5%. El piso viejo reportaba un error **13%
+menor** del que un pipeline real puede lograr a grano producto.
+
+**La retrospectiva se conserva** —el piso del 2026-08-03 tiene que seguir siendo
+reproducible y varios hallazgos se apoyan en él—, pero **no se comparan entre sí**: son dos
+convenciones que dan números distintos sobre los mismos datos.
 
 ## Tres gotchas de integración con `statsforecast==1.7.8`
 

@@ -161,11 +161,18 @@ def a_markdown(tablas: dict[str, pd.DataFrame], titulo: str, notas: str = "") ->
     orden = [
         ("corrida", "Corrida"),
         ("ganadores_por_cuadrante", "Modelo ganador por cuadrante (selección por serie, M1.7)"),
+        (
+            "ganadores_por_cuadrante_y_corte",
+            "Modelo ganador por cuadrante — cuenta **pares (serie, corte)**, no series "
+            "(selección prospectiva, M1.9)",
+        ),
         ("por_nivel_y_horizonte", "Por nivel de agregación y horizonte"),
         ("por_horizonte", "Por horizonte (grano producto)"),
         ("por_categoria", "Por categoría y horizonte"),
         ("por_cuadrante", "Por cuadrante de intermitencia y horizonte"),
         ("mase_por_horizonte", "MASE por horizonte"),
+        ("origen_de_la_prediccion", "Origen de cada predicción (ganador / cascada / nadie)"),
+        ("estabilidad_de_la_seleccion", "Cambios de ganador por serie a lo largo de los cortes"),
     ]
     for clave, encabezado in orden:
         if clave in tablas:

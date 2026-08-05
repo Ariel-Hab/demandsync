@@ -82,6 +82,7 @@ Objetivo: que en S1 pueda escribir el arnés sin depender de nadie.
 | **M1.7a** | **Checkpointing del arnés por corte** (precondición de M1.8) | S3 | `ejecutar_backtest(directorio_checkpoint=...)`: cada corte se persiste al terminar y una corrida interrumpida se reanuda. Con guarda de `id` de corrida para no mezclar checkpoints de configuraciones distintas |
 | **M1.8a** | **Extract propio del snap** (precondición de M1.8, no estaba planificada — ver §5.4) | S4 | `motor/scripts/extraer_snap.py`: los dos parquets del diccionario desde MySQL, con cross-check pandas vs SQL y validación contra el EDA. **La salida son datos reales: nunca al repo.** 21 tests sobre la transformación |
 | **M1.8** | **Corrida de validación real** en la máquina autorizada: extract propio desde el snap 2018→, mismo arnés, misma tabla | S4 | `motor/backtests/baselines-real-<fecha>.md` — **solo métricas agregadas**. Este es el piso a batir; se congela |
+| **M1.9** | **Selección prospectiva + cascada por disponibilidad**, y re-congelado del piso con ese criterio (unidad agregada el 2026-08-05 para cerrar §12.5 — ver §5.7) | S5 | `motor/backtests/baselines-real-prospectivo-<fecha>.md` + §5.6.2 con la comparación contra el piso retrospectivo sobre los mismos 18 cortes. **Gate:** test marcado `innegociable` que perturba los reales posteriores al corte t y verifica que los ganadores de los cortes ≤ t no se mueven — la idea de M1.3 aplicada a la *elección del modelo*, que es el hueco que M1.3 no cubre |
 
 ### 5.1 Relevamiento del 2026-07-27 — M1.1/M1.2 vuelven a 🟡 y se agrega M1.0
 
@@ -541,6 +542,132 @@ corrida que los produjo.
 
 **No depende de:** contrato v1.0, R1, ni de trabajo de otros. M1.8 usa extract propio del snap (decisión #4 de `plan-diseno.md`), no el ETL.
 
+### 5.6.2 M1.9 — el piso prospectivo, y por qué el sesgo del piso viejo era del criterio (2026-08-05)
+
+Misma corrida `a79a9b23676b`, mismos 18 cortes, mismo universo: **se reusaron los
+checkpoints y no se reajustó un solo modelo**. Cambia únicamente cómo se elige el modelo de
+cada serie. Costo: **12 segundos** contra los 294 min de la corrida original.
+
+Los tres escenarios, todos sobre los mismos datos ya predichos:
+
+| | Selección | Cascada |
+|---|---|---|
+| **A** | retrospectiva (una por serie, con todos los cortes) | no |
+| **B** | prospectiva (una por serie y corte, con lo ya observado) | no |
+| **C** | prospectiva | **sí** ← **el piso nuevo** |
+
+**Sesgo a nivel total, que es donde vive el gate de ±5% de ADR-008:**
+
+| escenario | h=1 | h=3 | h=6 | h=12 |
+|---|---|---|---|---|
+| **A** — el piso congelado | −0,0338 | −0,0260 | **−0,0517** ❌ | **−0,0597** ❌ |
+| **B** — solo cambia el criterio | +0,0077 | +0,0153 | −0,0233 ✅ | −0,0311 ✅ |
+| **C** — más la cascada | +0,0077 | +0,0203 | −0,0100 ✅ | −0,0090 ✅ |
+
+**1. El sub-pronóstico sistemático de horizonte largo era, en su mayor parte, del criterio
+de selección — no de los baselines.** Los dos incumplimientos del ±5% desaparecen **ya en
+B**, antes de tocar la cobertura: más de la mitad del movimiento (−0,0517 → −0,0233 en h=6)
+lo produce elegir el modelo con lo observado en vez de con todo el backtest. El mecanismo es
+el que la tabla de estabilidad hace visible (punto 4): el ganador retrospectivo se aplica
+también a los tramos donde ya no era el mejor, y en horizonte largo eso arrastra un sesgo en
+una dirección. **Esto tiene consecuencias fuera de M1.9 — ver ADR-016 y la actualización de
+ADR-015.**
+
+**2. El piso empeora en WAPE, y esa es exactamente la idea.** A grano producto:
+
+| nivel | h | A | B | C | Δ (C−A) |
+|---|---|---|---|---|---|
+| producto | 1 | 0,2870 | 0,3305 | **0,3305** | +0,0435 |
+| producto | 3 | 0,2954 | 0,3721 | **0,3767** | +0,0813 |
+| producto | 6 | 0,3114 | 0,3844 | **0,4001** | +0,0887 |
+| producto | 12 | 0,3034 | 0,3457 | **0,3699** | +0,0665 |
+| categoría | 1 | 0,1283 | — | **0,1509** | +0,0226 |
+| total | 1 | 0,1029 | 0,1205 | **0,1205** | +0,0176 |
+| total | 12 | 0,0954 | 0,0907 | **0,0867** | **−0,0087** |
+
+El piso retrospectivo reportaba un WAPE **13% menor** del que un pipeline puede lograr a
+grano producto (0,287 contra 0,331 en h=1). Curiosidad que conviene no sobreinterpretar: a nivel
+**total** y h=12 el prospectivo es **mejor** (0,0867 vs 0,0954) — los errores de modelos
+distintos se cancelan al agregar.
+
+**3. La cascada no era un adorno: sin ella la cobertura habría EMPEORADO.** Es el resultado
+que más sorprendió.
+
+| escenario | cobertura h=1 | h=3 | h=6 | h=12 |
+|---|---|---|---|---|
+| **A** | 0,9920 | 0,9653 | 0,9288 | 0,8880 |
+| **B** | 0,9927 | 0,9638 | 0,9216 | **0,8651** ← peor que A |
+| **C** | 0,9927 | 0,9786 | 0,9546 | **0,9104** |
+
+Reelegir por corte hace que *más* series queden con un ganador incapaz de cubrir el
+horizonte, no menos. La cascada revierte eso y algo más. Y el número final cierra el
+diagnóstico de §5.6.1 punto 5 **exactamente**:
+
+| origen de cada predicción | filas | % |
+|---|---|---|
+| ganador del corte | 284.574 | 93,21% |
+| **cascada** | 8.035 | 2,63% |
+| **sin predicción (ningún candidato)** | **12.700** | 4,16% |
+
+Las 12.700 son, al número, las que §5.6.1 había atribuido a **altas de catálogo**. O sea:
+**la cascada cerró el 100% del componente reparable** y lo que queda es el arranque en frío
+genuino, que es el hueco donde M2 puede ganar con features de categoría/laboratorio. Esa
+separación es la que le permite a M2.5 comparar a igual cobertura.
+
+**4. El hindsight compraba mucho, y no se agota con el tiempo.** Solo el **15,7%** de las
+series conserva el mismo ganador en los 18 cortes; la mitad cambia 6 veces o más (máximo
+16 de 17 posibles). Y el WAPE por corte muestra que la brecha **no se cierra a medida que se
+acumula evidencia**: en el último corte (2026-04, con 17 cortes de historia) sigue siendo
+0,3426 contra 0,2907. No es un problema de arranque — es que el mejor método de una serie
+cambia de verdad, y saberlo de antemano no es reproducible.
+
+**5. El arranque sin evidencia costó poco, y se midió antes de darlo por bueno.** La
+decisión 2 de M1.9 fue no exigir un mínimo (el primer corte cae entero al fallback). El
+primer corte es efectivamente el peor de los 18 (WAPE 0,3947 contra 0,2543 del
+retrospectivo), pero descartarlo mueve el h=1 de 0,3305 a **0,3259**, y descartar más cortes
+**no mejora** (0,3317 con 3 fuera, 0,3466 con 6). Un burn-in habría costado cortes de
+evaluación sin comprar precisión, además de romper la comparación fila a fila contra el piso
+congelado.
+
+**6. El hallazgo replicado tres veces sigue en pie** con selección por corte: ningún
+candidato domina y la distribución de ganadores por cuadrante mantiene la forma de §5.3 y
+§5.6.1 punto 4. No enrutar por cuadrante sigue siendo lo correcto.
+
+**Gate de M1.9:** `test_la_seleccion_no_mira_el_futuro`, marcado `innegociable` — perturbar
+los reales posteriores al corte no mueve los ganadores anteriores. Verificado por mutación:
+**9/9 mutaciones caen**, incluidas las tres formas de aflojar la regla de observabilidad
+(`< corte`, "cortes anteriores enteros", y sacar el filtro).
+
+**Lección de método, que es la de siempre en otra forma:** el piso viejo no tenía un error
+de código ni de datos. Tenía un **criterio de medición** que nadie había cuestionado hasta
+que se escribió por qué era optimista, y ese criterio explicaba un hallazgo —el
+sub-pronóstico de horizonte largo— que ya se había convertido en decisión de proyecto. Una
+convención heredada ("cada producto queda con su mejor baseline") puede fabricar un hecho.
+
+### 5.7 Cambio de plan del 2026-08-05 — se agrega M1.9 y se ejecuta antes que M2.3
+
+**Motivo (CLAUDE.md §6.4).** §12.5 quedó desde el 2026-07-29 como *decisión pendiente* sin
+unidad de trabajo asignada, con la nota de que había que resolverla "antes de M2.5". Se
+adelanta a **antes de M2.3** y se le da unidad propia (**M1.9**) por tres razones, una de
+ellas nueva:
+
+1. **Los checkpoints la hacen barata hoy y cara mañana.** `C:/dfv-checkpoints-2026-08-03`
+   (18 parquets, 7,6 MB) guarda las predicciones de **los 7 candidatos**, no solo la del
+   ganador, así que la re-selección es un recálculo sobre datos ya calculados — el mismo
+   truco con el que §5.6.1 separó obsequios de mes incompleto. Sin ellos son **294 min** de
+   re-corrida. La higiene pendiente de `CLAUDE.md` §7 (borrar `C:/dfv-extract` y `-v3`) **no
+   los incluye**, y no se borran hasta cerrar esta unidad.
+2. **M2.3 se afinaría contra un número que después se mueve.** El piso es la vara del gate
+   de M2; cambiarla después de entrenar el global es elegir la vara viendo el resultado —
+   el mismo argumento con el que ADR-015 se decidió antes de M2.3 y no después.
+3. **El costo dejó de ser solo cualitativo** (§12.5, actualización del 2026-08-03): un
+   tercio de la cobertura que le falta al piso es artefacto de la selección retrospectiva,
+   no un límite de los baselines, y eso **no se arregla dándole al global el mismo trato**.
+
+**No es un hito nuevo ni mueve el gate de M1**, que ya está cumplido: exige una tabla
+congelada, no que se haya congelado con un criterio en particular. Lo que M1.9 cambia es
+**qué tabla es el piso de M2.5**, y por eso va ADR (§12.5 lo exigía explícitamente).
+
 ## 6. M2 — Deflación y modelo global · S5–S8
 
 | # | Unidad de trabajo | Semana | Entregable / gate |
@@ -863,6 +990,7 @@ sintético no tiene aún altas de cliente, que es lo que M3.2 va a necesitar jun
 | S4 | M1 | **Regla de universo: obsequios y descontinuados** (corrección de M1.8a) | M1.8b | ✅ 2026-08-02 — **ADR-012**. `UMBRAL_PRECIO_OBSEQUIO = 0,05` a nivel renglón + `detectar_meses_incompletos()` contra la réplica atrasada. Universo 2.189 → **2.128**, extract 137.399 → **135.409** filas. **248 tests**, `ruff` limpio; los 9 nuevos verificados por mutación. **Deja al piso de M1.8 pendiente de re-congelar** (§5.5.1) |
 | S4–S5 | — | Deuda del generador (precondición de M2.2, no bloquea M1) | T0.4 | ✅ 2026-07-31 (23 tests) |
 | S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | ✅ **M2.1** 2026-07-31 (67 tests) · **M2.2** 2026-08-04 — `motor/src/motor/features/`, gate de M1.3 cubierto (`pytest -m innegociable`), **274 tests**, `ruff` limpio, **7/7 mutaciones caen**. Validada a escala real en 3 cortes (cobertura 0,9899 sobre filas con precio propio; 2,5 s / 116k filas). **Tres correcciones a la lista de features** en §6.3 → **ADR-013**: el precio deflactado a grano producto es el ancla (identidad, CV 0,0000) y `revenue_real` es el target reescalado, así que la señal pasa a ser el **precio relativo al nivel**; `mismo_mes_año_anterior` era `lag 12`; **`CLIENTE_FEATURE` se difiere a M3.2** porque el extract real no tiene cliente×producto |
+| S6 | M1 | **Selección prospectiva · re-congelado del piso** (cierra §12.5 — unidad agregada, ver §5.7) | M1.9 | ✅ **2026-08-05 — ADR-016**. `backtests/baselines-real-prospectivo-2026-08-05.md`, misma corrida `a79a9b23676b` reusando los checkpoints: **12 segundos**, cero modelos reajustados. El piso pasa a WAPE producto **0,331** (h=1, contra 0,287 retrospectivo) con cobertura h=12 **0,9104** (contra 0,8880), y lo que queda sin cubrir son **12.700 filas = exactamente las altas de catálogo de §5.6.1**. **Hallazgo que sale del alcance de la unidad:** el sub-pronóstico de horizonte largo era del criterio de selección, no de los baselines — el sesgo total cumple el ±5% en los cuatro horizontes, lo que obliga a revisar **ADR-015** antes de ratificarlo. **289 tests**, `ruff` limpio, gate `innegociable` cubierto, **9/9 mutaciones caen**. Detalle en §5.6.2 |
 | S7 | M2 | LightGBM global · cuantiles | M2.3–M2.4 | ⬜ |
 | S8 | M2 | **Champion/challenger vs piso** | M2.5 | ⬜ |
 | S9 | M3 | Reconciliación jerárquica | M3.1 | ⬜ |
@@ -1137,11 +1265,23 @@ trato retrospectivo" ya no alcanza**, porque el trato retrospectivo no es solo u
 de selección más laxo, es una fuente de filas sin predicción. Nivelar hacia el lado
 prospectivo es la única variante que hace las dos tablas comparables fila a fila.
 
-**Decisión pendiente (antes de M2.5, no bloquea M1.7/M1.8):** o se agrega una variante
-prospectiva de la selección (elegir el método en cada corte con los cortes anteriores) y
-el piso se recalcula con ella, o se le da al global el mismo trato retrospectivo. Lo que
-no se puede es comparar los dos criterios entre sí. Si se elige nivelar, **va ADR**:
-mueve un criterio de aceptación del gate de M2.
+**✅ CERRADA el 2026-08-05 — M1.9 / ADR-016.** Se niveló hacia el lado prospectivo, con
+cascada por disponibilidad, y el piso se re-congeló con ese criterio
+(`backtests/baselines-real-prospectivo-2026-08-05.md`). Los resultados están en **§5.6.2**;
+tres cosas que esta sección no había anticipado:
+
+- **La cascada era necesaria, no un complemento.** Sin ella la selección prospectiva
+  **empeora** la cobertura (0,8651 contra 0,8880 a h=12): reelegir por corte deja *más*
+  series con un ganador incapaz de cubrir el horizonte, no menos.
+- **Lo que quedó sin cubrir son 12.700 filas, exactamente el número que §5.6.1 atribuyó a
+  altas de catálogo.** El componente reparable se cerró entero.
+- **El hindsight compraba más de lo previsto y no se agota con la evidencia:** la brecha
+  sigue abierta en el último corte, con 17 cortes de historia acumulada. Solo el 15,7% de
+  las series conserva el mismo ganador en los 18 cortes.
+
+Y una consecuencia que caía fuera de lo que esta sección preveía: **el sub-pronóstico de
+horizonte largo del piso era en su mayor parte del criterio de selección**, no de los
+baselines — lo que obliga a revisar ADR-015 antes de ratificarlo (ADR-016, punto 5).
 
 ## 13. Fuera de este track
 

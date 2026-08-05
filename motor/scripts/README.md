@@ -172,5 +172,25 @@ a una terminal, así que además no ves el progreso.
   (trampa de `roadmap-motor.md` §12.2).
 - Si la corrida no cubre el catálogo completo, lo **escribe en la tabla** — distinguiendo
   una muestra estratificada deliberada de un recorte arbitrario.
-- Toda tabla lleva la advertencia de que la selección por serie es **retrospectiva**, así
-  que el piso que produce es optimista (`roadmap-motor.md` §12.5).
+- Toda tabla **declara su criterio de selección** (`--seleccion`, M1.9 / ADR-016) y la
+  advertencia **cambia con el flag**: la retrospectiva avisa que el piso es optimista por
+  hindsight y que desde M1.9 dejó de ser el piso de M2.5; la prospectiva dice lo contrario
+  —que es la tabla comparable— y por qué su WAPE es peor. Dejar el aviso equivocado sería
+  afirmar algo falso sobre el propio resultado, que es el modo de falla de §5.6.1.
+
+### Re-congelar el piso sin volver a predecir
+
+Si los checkpoints de la corrida siguen en disco, cambiar el criterio de selección **no
+cuesta nada**: el `id` de corrida es hash de configuración + huella de datos y **`n_jobs`
+no entra**, así que el mismo comando con `--checkpoint-dir` reusa los 18 cortes y va
+derecho a la selección. Es como se produjo el piso de M1.9 — **12 segundos** contra 294 min.
+
+```bash
+motor/.venv/Scripts/python motor/scripts/congelar_baselines_sintetico.py \
+    --hechos C:/dfv-extract-v2 --etiqueta real-prospectivo \
+    --n-cortes 18 --horizonte-max 12 --n-jobs 4 \
+    --checkpoint-dir C:/dfv-checkpoints-2026-08-03 --seleccion prospectiva
+```
+
+Si el extract cambió, el `id` no coincide y la reanudación **se rechaza**: es la guarda
+haciendo su trabajo, no un problema a saltear.

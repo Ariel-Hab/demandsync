@@ -1,6 +1,6 @@
 # motor/ — Motor de Predicción de Demanda
 
-**Responsable:** ML Specialist. **Estado:** M1 cerrado (piso real congelado en `backtests/`), T0.4 y M2.1 cerradas; en curso M2.2 (features). Ver [`roadmap-motor.md`](roadmap-motor.md) §9 para el estado vigente.
+**Responsable:** ML Specialist. **Estado:** M1 cerrado (piso real congelado en `backtests/` — **el vigente es el prospectivo de M1.9**), T0.4, M2.1 y M2.2 cerradas; sigue M2.3 (LightGBM global). Ver [`roadmap-motor.md`](roadmap-motor.md) §9 para el estado vigente.
 
 > **Regla de trabajo en este módulo (CLAUDE.md §6):** todo desarrollo se controla contra [`roadmap-motor.md`](roadmap-motor.md). Antes de codear, ubicá la tarea en una unidad de trabajo (`T0.x`/`M1.x`/…); si no existe, se agrega al roadmap primero. No se empieza un hito con el gate del anterior sin cumplir. Al terminar, se actualiza el estado de la unidad en el roadmap en la misma unidad de trabajo.
 
