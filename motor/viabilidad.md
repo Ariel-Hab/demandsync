@@ -54,13 +54,17 @@ Los CU prometen predicción por producto y por segmento — eso es alcanzable co
 ### 3.4 Exógenas: estacionalidad primero, clima después, macro solo vía deflación
 Orden de valor esperado: (1) calendario/estacionalidad mensual — barato y captura lo grueso de la señal climática indirecta; (2) precio real deflactado como feature — la señal comercial más rica del dataset; (3) clima observado como feature explicativa/mock para cumplir el alcance académico, sin depender de él para precisión (a 6–12 meses se necesitaría *pronóstico* climático, que no existe con esa precisión); (4) macro (IPC INDEC) solo como fallback del ancla de deflación, no como regresor del modelo en el MVP.
 
+> **Dos actualizaciones posteriores, medidas.** El orden de este párrafo se sostuvo, pero dos de sus cuatro ítems se precisaron al implementarlos y conviene no leerlos hoy en su forma original:
+> - **(2) a grano producto es una identidad, no una feature** — `precio_prom × d = ancla` en el 99,15% de las filas reales, CV intra-producto 0,0000. La señal a ese grano es el **precio relativo al índice de su nivel**. A grano **cliente** el monto deflactado sí conserva señal (el descuento individual sobrevive) y sigue valiendo para el RFM. Ver **ADR-013** y `roadmap-motor.md` §6.3.
+> - **(3) el clima no entra al modelo, y ahora está decidido fuera del motor** — **ADR-014** (2026-08-05) lo formaliza como decisión de alcance, porque el Acta y CU-03/CU-09 aprobados afirman lo contrario. El argumento se reforzó: el dato del MVP es **mock por contrato §6**, así que entrenar sobre él no puede producir señal por construcción.
+
 ### 3.5 Limitación estructural a documentar: demanda censurada
 Sin histórico de stock no se distinguen los meses de venta cero por "no hubo demanda" de los de "hubo quiebre". Estándar en la industria; se documenta como supuesto (ventas ≈ demanda) y se revisa si el cliente algún día expone quiebres.
 
 ## 4. Qué NO es viable prometer (anti-alcance del motor)
 
 - Pronóstico puntual preciso por cliente×producto×mes (ver §3.2).
-- Precisión alta "garantizada" a 12 meses en el contexto macro argentino: se promete el intervalo y el proceso de mejora continua, no un MAPE bajo.
+- Precisión alta "garantizada" a 12 meses en el contexto macro argentino: se promete el intervalo y el proceso de mejora continua, no un MAPE bajo. *(**Confirmado con datos reales y elevado a decisión de proyecto: ADR-015**, 2026-08-05. El piso congelado sub-pronostica **−5,2% a h=6 y −6,0% a h=12**, fuera del ±5% de ADR-008, mientras cumple en h=1/h=3. Esta línea, escrita el 2026-07-15 antes de medir nada, resultó exacta.)*
 - Modelar rotación histórica de stock o quiebres pasados (no hay datos; ADR-004).
 - Recalculo de modelos en tiempo real (restricción batch del acta — y correcta).
 

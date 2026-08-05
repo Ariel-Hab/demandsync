@@ -232,3 +232,81 @@ Nada de esto contradice a ADR-002 ni la debilita. Al contrario: es su consecuenc
 **Alternativas descartadas:** (a) **construir la columna literal y documentar que es constante** — cumple la letra de la especificación y mete una columna muerta que después alguien va a intentar interpretar; (b) **normalizar el precio relativo por el precio del corte en vez del ancla**, que haría la lectura "1,0" exacta — se descartó porque el precio del corte solo existe para el 73,2% de los productos (§6.2), mientras que el ancla cascadea y cubre el 99,95%: se cambiaba interpretabilidad por cobertura; (c) **usar el deflactor contra el IPC como contraste** — rompe CP-INF-01 y contradice a ADR-002, ya medido en ADR-012 punto 6.
 
 **Docs impactados:** `motor/plan-diseno.md` §M2 (hecho), `motor/roadmap-motor.md` §6/§6.3/§9 (hecho), `motor/src/motor/features/README.md` (hecho), `motor/src/motor/deflacion/README.md` (hecho), Plan de Pruebas UTN (CP-INF-04: dejar explícito que el monto deflactado del RFM es a grano **cliente**, donde sí conserva señal — no cambia el caso, precisa su grano). El documento formal lo edita el Analista Funcional: registrado como pendiente en `planning/roadmap.md`.
+
+---
+
+## ADR-014 — El clima no es feature del modelo de demanda; queda como variable de contexto mock
+
+**Estado:** **Propuesta (2026-08-05)** — a ratificar con el **Project Manager** y el **Analista Funcional**. A diferencia de ADR-007/008/010/012/013, esta decisión **no cae bajo la autoridad técnica del ML Specialist**: toca el *Objetivo del Producto* del Acta de Proyecto aprobada y los supuestos de CU-03 y CU-09, así que es una decisión de **alcance** y la ratifica quien es dueño del alcance. El motor ya opera así desde M2.2 —no existe ninguna feature climática en el código— de modo que lo que este ADR hace no es cambiar el comportamiento sino **dejar de tener esa decisión escrita solo en documentos del motor**.
+
+**Contexto:** cinco lugares de la documentación aprobada comprometen clima.
+
+| Documento aprobado | Qué dice |
+|---|---|
+| Acta, *Objetivo del Producto* 1 | "Integrar y normalizar fuentes de datos externas (APIs) para incorporar series temporales de **condiciones climáticas** y métricas macroeconómicas" |
+| Acta, *Objetivo del Producto* 2 | "Ejecutar modelos de series temporales y **Machine Learning multivariable**" |
+| CU-03, *Supuestos y Dependencias* | "La **variable climática** y macroeconómica **ya está incorporada al pipeline**" |
+| CU-09, pasos 4–5 | El RAG recupera "**variables climáticas**" y la plantilla de respuesta las cita como razón: "debido a [razón basada en segmento/**clima**/historial]" |
+| Gantt (línea base 2026-05-26), tarea 41 | "Integración API Climática", 2026-09-22 → 2026-10-06, dentro del módulo de Ingesta |
+
+Contra eso, la evidencia relevada en M0 (`motor/viabilidad.md` §2.6, con fuentes) dice que el clima como **driver de precisión** tiene valor modesto y de corto plazo: el caso mejor documentado logra reducciones de error grandes en porcentaje pero equivalentes a **~2% de las ventas**, y el beneficio se concentra en horizontes **≤7 días**, donde existe pronóstico meteorológico. El motor pronostica a **grano mensual, horizonte 1–12 meses**: a esa distancia el clima futuro **no se conoce**. Una feature climática solo podría usar clima *observado*, que no está disponible en el momento de predecir t+6 — y meterlo de todos modos sería exactamente el leakage que ataja la red de M1.3.
+
+Hay además una restricción del propio proyecto que decide la cuestión de hecho: `docs/contrato-ingesta.md` §6 define `variables_externas_<AAAAMM>.json` como **series simuladas** ("mock en el MVP"), conforme a la restricción del Acta de operar contra archivos JSON. O sea que **el dato climático que el sistema va a tener en el MVP es sintético**, no medido. Entrenar sobre él no puede producir señal, por construcción.
+
+**Decisión:**
+
+1. **Ninguna variable climática entra como feature del modelo de demanda** en M2 ni M3. La lista de features cerrada en M2.2 (`plan-diseno.md` §M2, ADR-013) no la incluye y no se agrega.
+2. **La señal climática se captura indirectamente por estacionalidad de calendario** — `mes del año`, ya implementado en M2.2 como `date_features` de `mlforecast`. Es la parte de la señal que sí es predecible a 12 meses: la campaña sanitaria de primavera ocurre todas las primaveras. Es también el orden de valor que fija `viabilidad.md` §3.4 (calendario primero, clima después).
+3. **Se mantiene la ingesta mock de `variables_externas`** (contrato §6) y la tarea 41 del Gantt. Cumple el alcance académico del Acta y deja el esquema listo para APIs reales sin tocar la ingesta. Lo que este ADR niega es que el **motor la consuma**, no que exista.
+4. **El asistente de explicabilidad (CU-09) no puede presentar el clima como causa de una recomendación mientras el dato sea mock.** Hoy su plantilla de respuesta lo hace de forma explícita. Mostrarle a un vendedor una serie simulada como justificación de una sugerencia real es un problema de honestidad del producto, no un detalle de implementación: el vendedor va a repetirle ese argumento a la veterinaria. **Es la consecuencia más importante de este ADR** y hay que corregirla en CU-09 antes de R4.
+5. **Si alguna vez el clima entra, entra con medición y ADR nuevo:** contra el piso congelado de M1, a igual cobertura, y demostrando ganancia en h=1/h=3 —los únicos horizontes donde podría tenerla—. No se agrega "porque está en el Acta".
+
+**Consecuencias:** el Acta conserva la **ingesta** de clima y pierde el ML multivariable **sobre clima**; el modelo global sigue siendo multivariable en el sentido que importa (lags, calendario, categoría, laboratorio y precio relativo al nivel — ADR-013). CU-03 tiene que dejar de afirmar que la variable climática está incorporada al pipeline, porque hoy es falso y va a seguir siéndolo. CU-09 tiene que sacar el clima de su plantilla de respuesta o marcarlo como contexto no causal. El Gantt no cambia. **Ningún caso de prueba existente cae:** no hay CP climático, lo que de paso confirma que el compromiso nunca tuvo criterio de verificación.
+
+**Alternativas descartadas:** (a) **clima real como feature del modelo** — a 6–12 meses exigiría pronóstico climático de una precisión que no existe, y a h=1 el beneficio medido es ~2% de ventas contra el costo de una dependencia externa viva en el batch nocturno; (b) **clima solo en el modelo de h=1** — parte el pipeline multi-horizonte directo de M2.3 en dos configuraciones distintas por ~2% de ventas, y M2.5 dejaría de comparar una sola cosa; (c) **sacar el clima de todo el alcance, incluido el mock** — rompe un objetivo del Acta sin necesidad, cuando el mock cuesta poco y mantiene el esquema abierto; (d) **dejar la decisión donde estaba**, solo en `viabilidad.md` §3.4 y `roadmap-motor.md` §13 — es el statu quo que este ADR viene a cerrar: dos documentos aprobados afirman lo contrario y nadie fuera del motor lo sabe.
+
+**Docs impactados:** **Acta de Proyecto UTN** (*Objetivo del Producto* 1 y 2: precisar que el clima se ingiere y se muestra, no que se modela), **Casos de Uso UTN** (**CU-03** *Supuestos*: retirar "la variable climática ya está incorporada al pipeline"; **CU-09** pasos 4–5: retirar el clima de la plantilla de respuesta o marcarlo como contexto no causal), **Plan de Pruebas UTN** (no cae ningún caso; conviene agregar uno negativo: que el asistente no atribuya causalidad al clima mock), `docs/vision-y-alcance.md` §1 (dice "más fuentes externas (clima, macroeconomía)" — precisar el rol), `motor/viabilidad.md` §3.4 y `motor/roadmap-motor.md` §13 (hecho: pasan a citar este ADR). Los documentos formales los editan el **PM** (Acta) y el **Analista Funcional** (CU, Plan de Pruebas) — registrado como pendiente en `planning/roadmap.md`.
+
+---
+
+## ADR-015 — El compromiso de precisión se acota por horizonte: punto en h=1/h=3, intervalo en h=6/h=12
+
+**Estado:** **Propuesta (2026-08-05)** — a ratificar con el **Project Manager** y el **Analista Funcional**. Es la invocación explícita del **Riesgo 5 del Acta**, que ya pre-autoriza esta mitigación, pero mueve un **criterio de aceptación del Release 2** y el contenido de CU-03, así que no la ratifica el ML Specialist por su cuenta. **El gate interno de M2 no se relaja** — ver punto 5, que es la parte que no hay que leer al revés.
+
+**Contexto:** el piso de baselines quedó congelado el 2026-08-03 sobre datos reales (corrida `a79a9b23676b`, 2.128 productos × 18 cortes, `motor/backtests/baselines-real-2026-08-03.md`). Contra el ±5% de sesgo a nivel total que fija ADR-008:
+
+| horizonte | sesgo total | ¿dentro de ±5%? |
+|---|---|---|
+| 1 | −0,0338 | sí |
+| 3 | −0,0260 | sí |
+| 6 | −0,0517 | **no, apenas** |
+| 12 | −0,0597 | **no** |
+
+Los baselines **sub-pronostican sistemáticamente en horizonte largo**. Tres cosas hacen que este número sea confiable y no un accidente:
+
+- **Ya se corrigió una vez en la dirección incómoda.** La corrida anterior daba −1,4% a h=12 y `roadmap-motor.md` §5.6 concluyó que "los baselines ya cumplen el gate". Era artefacto de un mes incompleto: 2026-06 entró como mes evaluado con 32% de las unidades, lo que achica `real` y corre `pred − real` hacia arriba, enmascarando el sub-pronóstico. Sacándolo, h=12 pasó de −1,1% a **−8,2%** (§5.6.1).
+- **No es efecto de la cobertura.** Rellenando con `WindowAverage` las filas del horizonte truncado, h=12 mejora solo a −0,0530: sigue afuera. El de h=6 sí es de borde (entra a −0,0464).
+- **Estaba previsto desde M0, antes de medirlo.** `viabilidad.md` §4 ya listaba como anti-alcance "precisión alta *garantizada* a 12 meses en el contexto macro argentino: se promete el intervalo y el proceso de mejora continua, no un MAPE bajo", y §3.3 ya remitía al Riesgo 5 del Acta.
+
+Y la documentación aprobada dejó la salida escrita:
+
+| Documento aprobado | Qué dice |
+|---|---|
+| Acta, *Riesgos Identificados* 5 | "Si a largo plazo la varianza es insalvable, **se acotarán las métricas de éxito dándole mayor peso operativo al horizonte de 1 mes**" |
+| CU-03, *Problemas / Comentarios* Nota 1 | "Para horizontes de 6 y 12 meses, la varianza del modelo puede ser alta. **El sistema informará esto visualmente** para que el analista lo considere en su decisión" |
+| CU-03, curso alternativo paso 4 | Ya contempla "No hay suficiente historial para proyectar este horizonte" |
+
+**Decisión.** Se separan dos cosas que hoy están mezcladas: **qué le promete el producto al usuario** y **qué le exige el gate al modelo**.
+
+1. **El compromiso cuantitativo de precisión del producto se fija en h=1 y h=3**: WAPE por nivel de agregación (ADR-008) y sesgo a nivel total dentro de ±5%. Es lo que se reporta como criterio de aceptación del Release 2.
+2. **Para h=6 y h=12 el entregable es el intervalo calibrado, no el punto con error acotado.** El compromiso pasa a ser la **cobertura empírica** del P10–P90 (M2.4): que el intervalo contenga al real aproximadamente el 80% de las veces. Un intervalo ancho y honesto es un entregable; un punto con −6% de sesgo sistemático presentado como precisión, no.
+3. **El sesgo se mide y se publica en los cuatro horizontes, siempre con su signo.** En h=6/h=12 se reporta como desvío conocido y direccional (**sub-pronóstico**); no se omite ni se promedia con los cortos. Un analista de compras que sabe que el sistema tira bajo a 12 meses puede corregirlo; uno que no lo sabe, no.
+4. **CU-03 Nota 1 sube de nota a criterio verificable.** "El sistema informará esto visualmente" deja de ser una observación y pasa a ser requisito: la vista de h=6/h=12 muestra el intervalo y la advertencia de varianza, no un número seco. Esto además **le da reemplazo al badge de MAPE de CU-03**, que ADR-008 dejó sin implementación y sin dueño (`roadmap-motor.md` §12.3): el indicador de confianza pasa a ser el intervalo, que el motor sí produce.
+5. **El gate interno de M2 NO se relaja.** Sigue exigiendo que el modelo global **corrija** el sub-pronóstico de horizonte largo, no que se le perdone: en h=6/h=12 el gate pide empatar el WAPE del piso **y** reportar cobertura empírica del intervalo, y el sesgo del global se compara contra el del piso. Este ADR acota **lo que el producto promete**, no la vara del modelo. Si el global cierra el ±5% en h=6/h=12, tanto mejor y se comunica; lo que no se hace es prometerlo antes de tenerlo.
+6. **Se decide ahora, con el número medido y antes de M2.3.** Fijar el criterio de aceptación después de ver si el modelo lo pasa es elegir la vara según el resultado.
+
+**Consecuencias:** el hito de validación del Release 2 en el Acta ("las métricas de error de los modelos predictivos están documentadas") queda cumplible y verificable, con la salvedad de horizonte declarada por escrito en vez de descubierta en la demo. CU-03 gana un requisito (intervalo + advertencia en h=6/h=12) y pierde el badge de MAPE. El Plan de Pruebas del R2 tiene que expresar criterios de aceptación **por horizonte** y no en un número único. **Lo que este ADR no hace:** no saca h=6 ni h=12 del producto — CU-06 (alertas de vencimiento con horizontes 1/3/6) y CU-07 (lead time) los necesitan y el Acta los compromete; los conserva con el entregable correcto.
+
+**Alternativas descartadas:** (a) **prometer ±5% en los cuatro horizontes** — el piso ya lo incumple en dos y no hay evidencia de que el global lo cierre; se estaría prometiendo sobre una expectativa; (b) **sacar h=6/h=12 del alcance** — rompe CU-06, CU-07 y el objetivo del Acta de predicción a 1/6/12, y además el horizonte largo con intervalo ancho **sí sirve** para planificación de compras, que es su caso de uso real; (c) **esperar a M2.5 para decidir** — descartada por el punto 6; (d) **relajar el ±5% de ADR-008 a un número más laxo en todos los horizontes** — degrada la métrica donde hoy se cumple (h=1 da −3,4%) para acomodar donde no; declarar la diferencia por horizonte es más honesto y más útil.
+
+**Docs impactados:** **Acta de Proyecto UTN** (*Riesgos* 5: registrar que la mitigación se invocó, con fecha y número; hito de validación del Release 2: criterios por horizonte), **Casos de Uso UTN** (**CU-03**: RNF y paso 4(c) — el indicador de confianza pasa a ser el intervalo P10–P90; Nota 1 pasa de nota a criterio), **Plan de Pruebas UTN** (criterios de aceptación del R2 por horizonte: ±5% en h=1/h=3, cobertura empírica del intervalo en h=6/h=12), **Matriz de Gestión de Riesgos UTN** (la fila "la métrica de error (RMSE/MAPE) supera el umbral" pasa a WAPE/sesgo por horizonte — ver también ADR-008), `motor/plan-diseno.md` §M2 y `motor/roadmap-motor.md` §6 (gate de M2) y §5.6.1 (hecho: pasan a citar este ADR). Los documentos formales los editan el **PM** (Acta, Matriz de Riesgos) y el **Analista Funcional** (CU, Plan de Pruebas) — registrado como pendiente en `planning/roadmap.md`.

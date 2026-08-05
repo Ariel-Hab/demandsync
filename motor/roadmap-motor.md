@@ -472,6 +472,14 @@ sub-pronostican sistemáticamente en horizonte largo y el global tiene que corre
 solo empatar el WAPE. Esto no cambia el gate de M1 —que pide una tabla congelada, no que
 los baselines cumplan el gate de M2— pero sí borra la tranquilidad que dejó §5.6.
 
+> **Cerrado como decisión de proyecto el 2026-08-05: ADR-015.** El compromiso de precisión
+> del *producto* se acota por horizonte (punto en h=1/h=3, **intervalo calibrado** en
+> h=6/h=12), invocando el **Riesgo 5 del Acta**, que ya pre-autorizaba esta mitigación
+> ("si a largo plazo la varianza es insalvable, se acotarán las métricas de éxito dándole
+> mayor peso operativo al horizonte de 1 mes"). Se decidió **antes de M2.3**, a propósito:
+> fijar el criterio después de ver si el modelo lo pasa es elegir la vara según el
+> resultado. **El gate de M2 no se relajó** — ver §6.
+
 **4. Lo que se replicó sin cambios.** Ningún candidato domina: el más ganador
 (`SeasonalNaive`) baja de 678 a **481 de 2.106 series (23%)**, y **`CrostonSBA` vuelve a
 ganar mucho más en `suave` (315) que en `lumpy` (20)**. Tercera medición del mismo
@@ -543,7 +551,12 @@ corrida que los produjo.
 | **M2.4** | Intervalos: quantile regression P10/P50/P90 | S7 | Cobertura empírica de los intervalos reportada (¿el P10–P90 cubre ~80%?) |
 | **M2.5** | **Champion/challenger por serie** + reporte comparativo contra el piso congelado, sobre sintético **y** real | S8 | `motor/backtests/global-vs-baselines-<fecha>.md` |
 
-**Gate de salida de M2** (= puntos 2–4 de la Definición de listo de `plan-diseno.md`): el global ML gana en WAPE a niveles **producto y categoría** para **h=1 y h=3** (para h=6/12 alcanza empatar con mejor intervalo), y el sesgo global a nivel total queda dentro de **±5%**. Donde no gana, **manda el baseline** — el resultado legítimo de M2 puede ser "el baseline se queda con el 30% de las series", y eso se documenta, no se esconde.
+**Gate de salida de M2** (= puntos 2–4 de la Definición de listo de `plan-diseno.md`), **precisado por horizonte en ADR-015 (2026-08-05)** porque el piso real incumple el ±5% en h=6/h=12 (§5.6.1):
+
+- **h=1 y h=3:** el global gana en WAPE a niveles **producto y categoría**, y el sesgo a nivel total queda dentro de **±5%**.
+- **h=6 y h=12:** alcanza **empatar** el WAPE del piso, **y además** reportar la **cobertura empírica** del intervalo P10–P90 (M2.4). El sesgo se mide y se publica con su signo, y **se compara contra el del piso**: el gate exige que el global *corrija* el sub-pronóstico largo (−5,2% / −6,0%), no que se le perdone.
+
+**ADR-015 acota lo que el producto le promete al usuario, no la vara del modelo** — no leerlo al revés. Donde no gana, **manda el baseline**: el resultado legítimo de M2 puede ser "el baseline se queda con el 30% de las series", y eso se documenta, no se esconde.
 
 **Riesgo específico:** validar solo en sintético haría ver al modelo mejor de lo que es (el generador no tiene la irregularidad del mundo real). Por eso M2.5 exige la corrida real.
 
@@ -1062,8 +1075,12 @@ para resolverlo después, no se resuelve ahora. Tres cosas para quien lo levante
 - **Métricas del modelo de propensión (M3.2)**: WAPE/MASE/sesgo no aplican a una
   clasificación binaria. Hay que fijar PR-AUC / lift@k / calibración **como ADR nuevo**
   antes de cerrar M3.2 (ver la nota de §7).
-- **MAPE comunicacional** (ADR-008: solo en niveles agregados, para la UI) no está
-  implementado. Probablemente sea del frontend (R4); acordarlo, no asumirlo.
+- ~~**MAPE comunicacional** (ADR-008: solo en niveles agregados, para la UI) no está
+  implementado. Probablemente sea del frontend (R4); acordarlo, no asumirlo.~~
+  **Resuelto por ADR-015 punto 4 (2026-08-05):** el indicador de confianza de CU-03 pasa a
+  ser el **intervalo P10–P90** de M2.4, que el motor sí produce, en vez de un badge de MAPE
+  que nadie implementaba y del que nadie era dueño. Queda como pendiente documental del
+  Analista (CU-03), no como deuda de código del motor.
 
 ### 12.4 Sensibilidad a clientes de alto volumen — abierta, no desarrollada
 
@@ -1128,4 +1145,4 @@ mueve un criterio de aceptación del gate de M2.
 
 ## 13. Fuera de este track
 
-Deep learning (LSTM/transformers), pronóstico intra-mensual, optimización de precios, demanda censurada por quiebres, clima como driver de precisión (queda como feature explicativa/mock — viabilidad §3.4). Tampoco entra: re-deduplicar factura/remito (es del exportador del lado cliente desde 2026-07-15), reglas de abastecimiento (R3, backend), ni dashboard (R4, frontend).
+Deep learning (LSTM/transformers), pronóstico intra-mensual, optimización de precios, demanda censurada por quiebres, clima como driver de precisión (queda como feature explicativa/mock — viabilidad §3.4, formalizado en **ADR-014**: el dato del MVP es mock por contrato §6, así que entrenar sobre él no puede producir señal; la estacionalidad de calendario de M2.2 captura la parte predecible a 12 meses. **Ojo con CU-09:** su plantilla de respuesta hoy cita el clima como causa de una recomendación, y eso hay que corregirlo antes de R4). Tampoco entra: re-deduplicar factura/remito (es del exportador del lado cliente desde 2026-07-15), reglas de abastecimiento (R3, backend), ni dashboard (R4, frontend).

@@ -78,10 +78,10 @@
 1. Arnés de backtesting reproducible corriendo sobre sintético y real.
 2. Baselines congelados y documentados (tabla de referencia).
 3. Modelo global gana a los baselines en WAPE en los niveles producto y categoría para h=1 y h=3 (para h=6/12 alcanza con empatar con mejor intervalo).
-4. Sesgo global dentro de ±5% a nivel total.
+4. Sesgo global dentro de ±5% a nivel total **en h=1 y h=3**. En **h=6 y h=12** el compromiso es la **cobertura empírica del intervalo P10–P90** más el sesgo publicado con su signo y comparado contra el del piso — **ADR-015** (2026-08-05), que invoca el Riesgo 5 del Acta. El piso real sub-pronostica −5,2% (h=6) y −6,0% (h=12); el gate sigue exigiendo que el global lo **corrija**, lo que se acota es la promesa del producto, no la vara del modelo.
 5. Predicciones con intervalos escritas en `PREDICCION_DEMANDA` vía `EJECUCION_MODELO`, consultables < 2s.
 6. Segmentos RFM no contradicen el oráculo DFV (CP-SEG-01) y los casos CP-INF-01..05 pasan.
 
 ## Fuera de alcance del motor (MVP)
 
-Deep learning (LSTM/transformers), pronóstico intra-mensual, optimización de precios, demanda censurada por quiebres, clima como driver de precisión (queda como feature explicativa/mock — viabilidad §3.4).
+Deep learning (LSTM/transformers), pronóstico intra-mensual, optimización de precios, demanda censurada por quiebres, clima como driver de precisión (queda como feature explicativa/mock — viabilidad §3.4, formalizado en **ADR-014**: el dato del MVP es mock por contrato §6 y el clima futuro no se conoce a 6–12 meses; la estacionalidad de calendario capta la parte predecible).
