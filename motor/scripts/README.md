@@ -194,3 +194,43 @@ motor/.venv/Scripts/python motor/scripts/congelar_baselines_sintetico.py \
 
 Si el extract cambió, el `id` no coincide y la reanudación **se rechaza**: es la guarda
 haciendo su trabajo, no un problema a saltear.
+
+## `ablaciones_global.py` — con qué configuración el global llega a M2.5 (M2.3)
+
+Corre el modelo global de M2.3 en las cuatro combinaciones de sus dos interruptores y emite
+la tabla comparativa. **No es un piso ni un champion/challenger**: solo decide con qué
+configuración el global se presenta a la comparación de M2.5.
+
+```bash
+motor/.venv/Scripts/python motor/scripts/ablaciones_global.py \
+    --estratificado 100 --n-cortes 18 --horizonte-max 12 \
+    --checkpoint-dir C:/dfv-checkpoints-ablaciones
+```
+
+| interruptor | qué aísla |
+|---|---|
+| `usar_precio` | **qué compró M2.2.** Sin esto, si el global gana no se sabe si fue por las features de precio o a pesar de ellas |
+| `escalar_target` | las escalas van de jeringas a vacunas y el modelo es **uno solo**: sin escalar, las series grandes dominan el ajuste |
+
+### El default `--estratificado 100` no es cosmético
+
+Reproduce **la misma muestra** que la tabla de M1.7 (400 productos, semilla 42 —
+`roadmap-motor.md` §5.2), usando `motor.clasificacion.muestra_estratificada`, que es la
+misma función que llama `congelar_baselines_sintetico.py`. Esa función vive en el paquete y
+no en los scripts justamente por esto: dos implementaciones equivalentes que sortean
+distinto producen tablas que **parecen** comparables y no lo son.
+
+Con `--estratificado 0` corre el catálogo completo, que es más productos pero **no se
+compara** contra la tabla de M1.7.
+
+### ⚠️ Un directorio de checkpoints por variante — no lo unifiques
+
+El `id` de corrida es hash de configuración + datos y **no incluye el predictor**, así que
+las cuatro variantes generan el **mismo `id`**. Compartir directorio haría que la segunda
+"reanude" los checkpoints de la primera y devuelva el reporte de otra configuración sin
+avisar — la guarda de `id` no puede detectarlo porque el `id` coincide de verdad. El script
+arma un subdirectorio por variante.
+
+Es la contracara del mismo hecho que abarata M2.5: como el `id` no depende del predictor,
+una corrida del global sobre los mismos datos y cortes es **mergeable fila a fila** contra
+el reporte de baselines ya congelado, sin re-correr los 7.

@@ -1,14 +1,8 @@
-# `motor/src/motor/modelado/` — Baselines de forecast y selección (M1.5–M1.7)
+# `motor/src/motor/modelado/` — Baselines, selección y modelo global (M1.5–M1.9, M2.3)
 
 Ver diseño completo en [`../../../plan-diseno.md`](../../../plan-diseno.md) §M1 y
 [`../../../roadmap-motor.md`](../../../roadmap-motor.md) §5. Este README es la
 referencia rápida de **cómo usar el código**.
-
-> ## Estado: M1.5, M1.6 y M1.7 (código) cerrados (2026-07-29)
->
-> Los cinco baselines "normales", la rama intermitente y la **selección por serie** ya
-> corren dentro del arnés. Lo que sigue es **M1.8**: correr el mismo camino sobre el
-> extract real en la máquina autorizada y congelar el piso a batir.
 
 ## Piezas
 
@@ -16,7 +10,8 @@ referencia rápida de **cómo usar el código**.
 |---|---|
 | `baselines.py` | `predecir_baselines(...)` — M1.5: `SeasonalNaive`, `WindowAverage`, `AutoETS`, `AutoTheta`, `AutoARIMA` vía `statsforecast`. |
 | `intermitentes.py` | `predecir_intermitentes(...)` — M1.6: `CrostonSBA`, `TSB` vía `statsforecast`. |
-| `seleccion.py` | M1.7: `predecir_todos_los_candidatos` (los 7 juntos, un solo pase del arnés), `elegir_mejor_por_serie` (ganador por MASE), `armar_reporte_seleccionado` (la columna `pred` final) y `resumen_de_ganadores` (quién ganó dónde). |
+| `seleccion.py` | M1.7 + M1.9: `predecir_todos_los_candidatos` (los 7 juntos, un solo pase del arnés), las **dos** selecciones (`elegir_mejor_por_serie` retrospectiva, `elegir_mejor_por_corte` prospectiva) y sus armadores de `pred`. |
+| `modelo_global.py` | `predecir_global(...)` — M2.3: LightGBM global con `mlforecast`, multi-horizonte **directo**. El primer modelo del motor. |
 
 Los tres predictores cumplen el contrato `PredictorFn` de `motor.backtesting.arnes`
 (ver `backtesting/README.md`): se pasan directo a `ejecutar_backtest`.
@@ -99,6 +94,47 @@ el dataset real antes de escribir el código, no se dedujeron de la documentaci�
    cae a ese fallback y el resto del lote sigue con el modelo real.
    `test_producto_recien_entrado_no_rompe_la_corrida` lo prueba con un producto de
    exactamente 1 mes de historia mezclado con uno de 30.
+
+## El modelo global (M2.3) y sus cuatro trampas
+
+`predecir_global` es LightGBM sobre `mlforecast`, multi-horizonte **directo**
+(`max_horizon=h`: un modelo por horizonte, sin realimentar predicciones). Las features son
+las de M2.2 — `mlforecast` ejecuta lags/rollings/calendario, `motor.features` construye lo
+derivado de la deflación.
+
+**1. Antes que nada: el pin de LightGBM.** Con `lightgbm==4.7.0` en Windows,
+`LGBMRegressor.fit` muere con `OSError: access violation` si `pyarrow` se cargó antes — o
+sea *siempre* acá, porque la capa de datos lee parquet. No es de los datos: falla igual con
+arrays contiguos, sin columnas `category` y con `n_jobs=1`, y `KMP_DUPLICATE_LIB_OK` no lo
+arregla. `pyproject.toml` topa en `<4.7` y `tests/test_entorno_lightgbm.py` es la red
+(corre un subproceso: **es un crash del binding C, no una excepción de Python**).
+
+**2. Con `max_horizon`, las features se calculan una sola vez, en el origen.**
+`core.py::TimeSeries._predict_multi` arma un vector de features y le aplica los `h` modelos.
+Coincide con la forma del panel de M2.2 (una fila por origen de pronóstico), y es lo que
+hace que el precio aporte señal sin necesitar valores futuros.
+
+**3. `X_df` lleva el precio del CORTE, no el de `corte+1`.** Las exógenas dinámicas se
+indexan **por posición** (`rows = arange(_h, len(X_df), h)`), así que:
+
+- un `X_df` desordenado le da a un producto el precio de otro, **sin fallar**;
+- arrancar en `corte+1` desalinea entrenamiento y predicción por un mes, **sin fallar**.
+
+En entrenamiento la fila del origen `t` lleva el precio de `t`, así que en predicción tiene
+que llevar el del corte. Congelado, además, porque el precio futuro no se conoce y no se
+inventa. Lo fijan dos tests; sin ellos una versión nueva de `mlforecast` lo rompe en
+silencio.
+
+**4. `precio_ancla` no puede ir en `static_features`, aunque sea estática.** `_fit` valida
+que una estática no cambie comparando el primer valor contra el último, con `!=`, y
+**`NaN != NaN` es `True`** — así que un producto **sin ancla** (nulo en todas sus filas, o
+sea que no cambia) aborta la corrida entera con "its values change over time". Medido: 1 o 2
+productos por corte en el sintético estratificado. Viaja por `X_df`, donde el `NaN` llega
+intacto a LightGBM como *missing* nativo, en vez de imputarse.
+
+> **Costo:** ~14 s por corte sobre 2.128 productos y 96 meses (h=12, o sea 12 modelos).
+> Y **usá `n_jobs=1` en fixtures chicos**: medido, sobre 6 productos el paralelismo por
+> defecto cuesta 2,07 s contra 0,15 s — es todo overhead de threads.
 
 ## Costo y paralelismo — medido en M1.7, leer antes de largar una corrida grande
 

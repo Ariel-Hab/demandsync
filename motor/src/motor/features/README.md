@@ -78,6 +78,12 @@ precio de `corte+h` no se conoce, pero el del origen sí.
 | `var_precio_rel_3m`, `var_precio_rel_12m` | temporal |
 | `categoria`, `laboratorio` | categóricas estáticas |
 
+> **Cómo las consume M2.3, que no es como uno esperaría.** Solo `categoria` y `laboratorio`
+> van en `fit(static_features=...)`. **Las cuatro de precio viajan por `X_df`**, incluida
+> `precio_ancla` a pesar de ser estática: `mlforecast` valida que una estática no cambie
+> comparando su primer valor contra el último con `!=`, y `NaN != NaN` es `True`, así que un
+> producto sin ancla aborta la corrida entera. Detalle en `modelado/README.md`.
+
 El esquema es **estable**: sin catálogo las columnas están igual, en `NaN`. Si dependiera
 del insumo, M2.3 tendría dos configuraciones de features y el champion/challenger de M2.5
 compararía dos cosas distintas.

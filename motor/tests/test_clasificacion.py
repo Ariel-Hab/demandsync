@@ -12,12 +12,14 @@ from motor.backtesting.cortes import generar_cortes
 from motor.backtesting.leakage import verificar_sin_leakage
 from motor.clasificacion import (
     ADI_UMBRAL,
+    CUADRANTES,
     CV2_UMBRAL,
     SIN_ACTIVIDAD,
     clasificar_serie,
     clasificar_series,
     distribucion_cuadrantes,
     etiquetar,
+    muestra_estratificada,
 )
 
 # ---------------------------------------------------------------------------------
@@ -269,3 +271,84 @@ def test_clasificar_con_corte_no_mira_el_futuro():
         datos=datos,
         cortes=generar_cortes(datos["anio_mes"], n_cortes=3),
     )
+
+
+# ---------------------------------------------------------------------------------
+# Muestreo estratificado — vive acá desde M2.3, para que haya UNA sola definición
+# ---------------------------------------------------------------------------------
+
+
+def _catalogo_de_cuatro_cuadrantes(por_cuadrante: int = 5) -> pd.DataFrame:
+    """Productos de los cuatro cuadrantes, con distinta cantidad de cada uno.
+
+    `suave` queda con más productos que `lumpy` a propósito: es la asimetría real del
+    catálogo (~48% contra ~11%, EDA §3) y es justamente lo que el estratificado corrige.
+    """
+    meses = pd.date_range("2023-01-01", periods=36, freq="MS")
+    filas = []
+    perfiles = {
+        "suave": lambda i: 20.0 + (i % 3),
+        "intermitente": lambda i: 10.0 if i % 4 == 0 else 0.0,
+        "erratica": lambda i: 5.0 + 40.0 * (i % 5 == 0),
+        # rala Y de magnitud variable: con un valor constante el CV² da 0 y cae en
+        # `intermitente`, que es lo que hacía que este fixture no ejercitara `lumpy`
+        "lumpy": lambda i: (20.0 if i % 14 == 0 else 150.0) if i % 7 == 0 else 0.0,
+    }
+    id_producto = 0
+    for cuadrante, perfil in perfiles.items():
+        cuantos = por_cuadrante * (3 if cuadrante == "suave" else 1)
+        for _ in range(cuantos):
+            for i, m in enumerate(meses):
+                filas.append((id_producto, m, perfil(i), cuadrante))
+            id_producto += 1
+    return pd.DataFrame(filas, columns=["id_producto", "anio_mes", "unidades", "_cuadrante"])
+
+
+def test_el_estratificado_no_deja_que_un_cuadrante_domine():
+    hechos = _catalogo_de_cuatro_cuadrantes(por_cuadrante=5)
+
+    recortado, conteo = muestra_estratificada(hechos, n_por_cuadrante=3)
+
+    assert set(conteo) == set(CUADRANTES)
+    assert all(n <= 3 for n in conteo.values())
+    assert recortado["id_producto"].nunique() == sum(conteo.values())
+
+
+def test_un_cuadrante_con_menos_productos_que_el_pedido_se_toma_entero():
+    """Y el conteo lo tiene que decir: si se pidieron 10 y había 5, la tabla no puede
+    dar a entender que se muestrearon 10."""
+    hechos = _catalogo_de_cuatro_cuadrantes(por_cuadrante=2)
+
+    _recortado, conteo = muestra_estratificada(hechos, n_por_cuadrante=10)
+
+    assert all(n <= 10 for n in conteo.values())
+    assert min(conteo.values()) == 2
+
+
+def test_la_misma_semilla_da_exactamente_la_misma_muestra():
+    """Es la razón de que esta función viviera en un script y ahora viva en el paquete:
+    la tabla de M1.7 y la del global de M2.3 tienen que correr sobre **los mismos
+    productos**, o no son comparables aunque lo parezcan (`roadmap-motor.md` §5.2)."""
+    hechos = _catalogo_de_cuatro_cuadrantes()
+
+    una, _ = muestra_estratificada(hechos, n_por_cuadrante=3, semilla=42)
+    otra, _ = muestra_estratificada(hechos, n_por_cuadrante=3, semilla=42)
+    distinta, _ = muestra_estratificada(hechos, n_por_cuadrante=3, semilla=7)
+
+    assert sorted(una["id_producto"].unique()) == sorted(otra["id_producto"].unique())
+    assert sorted(una["id_producto"].unique()) != sorted(distinta["id_producto"].unique())
+
+
+def test_las_series_sin_actividad_no_entran_a_la_muestra():
+    """`sin_actividad` no es un cuadrante sino la ausencia de señal. Si entrara, ocuparía
+    lugar de productos que sí tienen algo que predecir."""
+    hechos = _catalogo_de_cuatro_cuadrantes()
+    muertos = hechos[hechos["id_producto"] == 0].copy()
+    muertos["id_producto"] = 999
+    muertos["unidades"] = 0.0
+    hechos = pd.concat([hechos, muertos], ignore_index=True)
+
+    recortado, conteo = muestra_estratificada(hechos, n_por_cuadrante=50)
+
+    assert 999 not in set(recortado["id_producto"])
+    assert SIN_ACTIVIDAD not in conteo

@@ -64,6 +64,38 @@ monto_real = revenue_cliente,t × (precio_prom_producto_hoy / precio_prom_produc
 
 **Decisión:** la segmentación operacional de DFV entra como **feature** (`CLIENTE_FEATURE`); la de DemandSync es agrupamiento ML versionado por `EJECUCION_MODELO` y sirve como dimensión de **salida** (scoping de predicciones), jamás como feature de entrenamiento entre corridas. La segmentación DFV actúa además de **oráculo de sanidad** en las pruebas (CP-SEG-01). Para reproducibilidad se prefiere Ward jerárquico; si se usa K-Means: semilla fija + versionado.
 
+**Aclaración (2026-08-06) — no cambia la decisión, explica cómo se lee.** "Dimensión de salida" se malinterpreta seguido como "el entregable es el segmento **en vez de** la predicción". No es eso: **la predicción por segmento existe y es un compromiso de los casos de uso** (`motor/viabilidad.md` §3.2). Lo que este ADR fija es **en qué momento del pipeline entra el segmento**, no si se entrega.
+
+Las dos arquitecturas posibles para llegar al mismo entregable:
+
+```
+(A) Segmento como ENTRADA — descartada
+    clusterizar clientes → cluster_id entra al modelo (o un modelo por cluster)
+                        → el modelo predice la demanda del cluster
+
+(B) Segmento como SALIDA — la decidida
+    modelo global predice al grano fino (producto; cliente×producto = propensión)
+                        → se agrega / filtra por cluster para presentar
+                        → "demanda del segmento 3" = suma de sus miembros
+```
+
+El usuario final ve lo mismo en las dos. La diferencia es que en (B) el número del segmento **se deriva** de predicciones más finas en vez de predecirse directo. Tres motivos:
+
+1. **Los IDs son inestables entre corridas** (el motivo original de este ADR). El clustering se recalcula en cada `EJECUCION_MODELO` y la numeración es arbitraria: el "cluster 3" de agosto no es el de septiembre. Un modelo que aprendió "cluster 3 → compra mucho" queda inválido cuando la etiqueta se remezcla, y **falla en silencio** — no tira error, tira números peores.
+2. **Fragmentar contradice el modelo global** (`motor/plan-diseno.md`, decisión 2). Partir en *k* modelos por cluster le da a cada uno 1/*k* de los datos, al revés de lo que muestra la evidencia M5 y de lo que ya midió el piso de baselines (ninguna serie sola tiene señal suficiente: el mejor candidato se lleva 23%).
+3. **El segmento es un eje ortogonal al árbol de reconciliación.** La jerarquía coherente es total → categoría → laboratorio → producto; cliente/segmento es *scoping aparte* (`viabilidad.md` §3.3). Predecir el segmento por separado deja dos estimaciones independientes del mismo total que no cierran entre sí — habría que reconciliar un cubo en vez de un árbol. Agregando desde abajo, suma por construcción.
+
+Por eso las dos segmentaciones tienen roles opuestos, y la de DFV **sí** puede ser feature: es determinística y estable entre corridas, así que no sufre el punto 1.
+
+| | Origen | Rol en el motor |
+|---|---|---|
+| **Segmentación operacional DFV** | ERP del cliente; determinística (percentiles y reglas) | **Feature** (`CLIENTE_FEATURE`) + oráculo de sanidad (CP-SEG-01) |
+| **Clustering RFM DemandSync** | Lo calcula el motor en cada corrida (M3.3) | **Salida**: dimensión de scoping, versionada por `EJECUCION_MODELO` |
+
+Cuando en el diseño se lee "segmento" como feature, es siempre el **operacional de DFV**, y solo aplica al modelo cliente×producto de **M3.2**: una fila producto-mes de M2.3 no tiene cliente, así que no tiene segmento.
+
+**Docs impactados:** `motor/plan-diseno.md` (decisión 2 desambiguada + §"El segmento es salida, no entrada" en M3 — hecho 2026-08-06). El gate de M3.3 en `motor/roadmap-motor.md` ya referencia este ADR y no requiere cambio.
+
 ---
 
 ## ADR-006 — Repositorio independiente del ecosistema DFV; datos reales nunca en el repo

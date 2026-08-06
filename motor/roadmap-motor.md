@@ -674,7 +674,7 @@ congelada, no que se haya congelado con un criterio en particular. Lo que M1.9 c
 |---|---|---|---|
 | **M2.1** | **Transformador de deflación (ADR-002)**: ancla por producto + índices de nivel (media geométrica ponderada) + fallback categoría → laboratorio → IPC + clamp de ratios. Los casos CP-INF-01..05 se escriben como tests unitarios del transformador | S5 | Componente reutilizable + tests CP-INF-*; el fallback se testea con la misma prioridad que el ancla directa (lo necesita el 25,4% de los productos — EDA §4); **test propio del precio implícito no utilizable** — 4.848 filas reales NaN por `unidades == 0` y 22 con precio ≤ 0 por signos cruzados (§5.5 #6). **CERRADA** ✅ 2026-07-31 — `motor.deflacion`, 67 tests, cobertura de ancla 73,2% contra el 74,6% del EDA §4 (§6.1, §6.2) |
 | **M2.2** | Features: lags (1,2,3,6,12), rolling means (3,6,12), mes del año, categoría/laboratorio, escala de precio (ancla) y **precio relativo al nivel** con su variación. *(Tres correcciones a la lista original, medidas: ver §6.3 y ADR-013)* | S5–S6 | **✅ CERRADA 2026-08-04** — `motor/src/motor/features/`: `especificacion.py` (lo que ejecuta `mlforecast`) + `precio.py` + `construccion.py`. Pasa la red de M1.3 (`pytest -m innegociable`). **274 tests**, `ruff` limpio; las **7 mutaciones caen**. Validado a escala real en 3 cortes: cobertura 0,9899 sobre filas con precio propio, CV intra-producto 0,1511, **2,5 s** sobre 116k filas |
-| **M2.3** | LightGBM global con `mlforecast`, **multi-horizonte directo** (un modelo por h ∈ {1,3,6,12}) | S6–S7 | Corre dentro del arnés, comparable 1:1 con el piso |
+| **M2.3** | LightGBM global con `mlforecast`, **multi-horizonte directo** (`max_horizon=12`: un modelo por horizonte) | S6–S7 | Corre dentro del arnés, comparable 1:1 con el piso. **✅ 2026-08-06** — ver §6.5. Se cumple en sentido literal: los dos reportes se mergean fila a fila y las filas sin cubrir son las mismas |
 | **M2.4** | Intervalos: quantile regression P10/P50/P90 | S7 | Cobertura empírica de los intervalos reportada (¿el P10–P90 cubre ~80%?) |
 | **M2.5** | **Champion/challenger por serie** + reporte comparativo contra el piso congelado, sobre sintético **y** real | S8 | `motor/backtests/global-vs-baselines-<fecha>.md` |
 
@@ -946,6 +946,134 @@ calendario (pasa a `shift` por filas), la guarda del transformador ajeno, la má
 sintético no tiene aún altas de cliente, que es lo que M3.2 va a necesitar junto con
 `CLIENTE_FEATURE`.
 
+### 6.4 Cambio de plan del 2026-08-06 — la ablación de precio se mide sobre real, no sobre sintético
+
+**Motivo (CLAUDE.md §6.4).** M2.3 se planificó como "sintético completo + una corrida real
+corta", con la comparación 1:1 contra `baselines-sintetico-2026-07-30.md`. Al ejecutarlo
+aparecieron dos cosas que invalidan esa forma:
+
+**1. La tabla sintética de M1.7 ya no es comparable con nada de hoy.** Se congeló el
+2026-07-30 y **T0.4 reescribió el generador el 2026-07-31** (cliente_feature, meses de neto
+negativo, altas y bajas correlacionadas, las 12 categorías reales). Sobre la misma muestra
+estratificada, misma semilla:
+
+| | filas | suma de unidades | `id` de corrida |
+|---|---|---|---|
+| tabla de M1.7 | 38.095 | 564.266,78 | `f993bc6ae12e` |
+| sintético de hoy | 27.683 | 517.206,84 | `be8823f67f16` |
+
+Es otro dataset. El `id` de corrida lo detecta —para eso existe—, pero **nadie lo iba a
+mirar** si el número salía plausible. Vale como aviso general: una tabla congelada sobre el
+sintético caduca cuando cambia el generador, cosa que no pasa con las de datos reales.
+
+**2. La ablación de precio no puede medirse sobre el sintético, por construcción.**
+`datasets/sintetico/demanda.py` no menciona el precio: el generador produce la demanda
+independientemente de él. O sea que las features de precio de M2.2 son **ruido exacto** en
+ese dataset, y la ablación solo puede confirmar que agregar ruido a LightGBM empeora un
+poco — que es lo que dio (WAPE producto h=1: 0,8858 sin precio contra 0,9360 con precio).
+**Leer eso como "M2.2 no aportó" sería un error de método**, del mismo tipo que los fixtures
+que pasaban en verde sin probar nada.
+
+**Qué se hace en lugar de eso.** Las cuatro ablaciones se corren sobre el **extract real
+completo**, 18 cortes, misma configuración que la corrida `a79a9b23676b` del piso. Se puede
+porque el costo real resultó ser **otro orden de magnitud del previsto**: ~14 s por corte,
+o sea ~4 min por variante, contra las horas que costaron los baselines (ahí el caro era
+`AutoARIMA`, ~2,9 s por producto). Y como el `id` de corrida **no incluye el predictor**,
+el reporte del global es mergeable fila a fila contra el del piso, sin re-correr los 7.
+
+La corrida sintética se conserva: acredita que el pipeline corre de punta a punta y que las
+cuatro variantes se distinguen entre sí, que era el gate. Lo que no acredita es cuál
+conviene.
+
+### 6.5 M2.3 cerrada — el global corre, y le gana al piso en 11 de 12 celdas (2026-08-06)
+
+`backtests/ablaciones-global-real-2026-08-06.md`, corrida `a79a9b23676b`: **el mismo `id`
+que el piso**, porque el hash no incluye el predictor. Los 2.128 productos × 18 cortes ×
+h=12, ~4 min por variante.
+
+**Las ablaciones, sobre datos reales (WAPE a grano producto):**
+
+| variante | h=1 | h=3 | h=6 | h=12 |
+|---|---|---|---|---|
+| **`precio+crudo`** ← elegida | **0,2953** | **0,3435** | **0,3834** | **0,3746** |
+| `sin_precio+crudo` | 0,2969 | 0,3445 | 0,3879 | 0,3979 |
+| `precio+escalado` | 0,2982 | 0,3748 | 0,4390 | 0,4949 |
+| `sin_precio+escalado` | 0,3009 | 0,3788 | 0,4457 | 0,4988 |
+
+**1. Las features de precio de M2.2 sí compran algo, y lo que compran crece con el
+horizonte.** A h=1 la diferencia es despreciable (0,0016) porque ahí mandan los lags; a
+**h=12 vale 0,0233, un 6% relativo**. Tiene sentido: a doce meses los lags ya no dicen casi
+nada y el estado de precio del origen es de lo poco que queda con información.
+
+**2. `LocalStandardScaler` empeora, y bastante:** h=12 pasa de 0,3746 a 0,4949 (**+32%**).
+Normalizar por serie le saca al modelo global justamente la escala que usa para agrupar
+productos parecidos, y como el WAPE pondera por magnitud, degradar las series grandes se
+paga caro. La intuición de "normalizá antes de un modelo global" no sobrevivió a medirla.
+
+**3. Sobre el sintético el signo de la ablación de precio era el OPUESTO** (0,8858 sin
+precio contra 0,9360 con precio). No es contradicción: §6.4 explica que el generador no
+vincula precio con demanda, así que ahí esas features son ruido exacto. **La confirmación
+de que la advertencia metodológica era correcta y no una excusa.**
+
+**Contra el piso prospectivo de M1.9**, misma corrida, **cobertura idéntica fila a fila**:
+
+| nivel | h | piso (M1.9) | global | Δ |
+|---|---|---|---|---|
+| producto | 1 | 0,3305 | **0,2953** | −0,0352 |
+| producto | 3 | 0,3767 | **0,3435** | −0,0332 |
+| producto | 6 | 0,4001 | **0,3834** | −0,0167 |
+| producto | 12 | **0,3699** | 0,3746 | +0,0047 ← la única que pierde |
+| categoría | 1 | 0,1509 | **0,1208** | −0,0301 |
+| categoría | 3 | 0,1701 | **0,1428** | −0,0273 |
+| categoría | 6 | 0,2063 | **0,1831** | −0,0232 |
+| categoría | 12 | 0,1787 | **0,1503** | −0,0284 |
+| total | 1 | 0,1205 | **0,0934** | −0,0271 |
+| total | 3 | 0,1390 | **0,0906** | −0,0484 |
+| total | 6 | 0,1575 | **0,1164** | −0,0411 |
+| total | 12 | 0,0867 | **0,0811** | −0,0056 |
+
+**4. La comparación es a igual cobertura, y está verificado, no supuesto.** El merge de los
+dos reportes por `(producto, mes, corte, horizonte)` da **305.309 filas, todas en ambos**, y
+las filas sin predicción son **exactamente las mismas 12.700** en los dos: cero donde uno
+cubre y el otro no. Son las altas de catálogo de §5.6.1 — productos cuya primera venta es
+posterior al corte, que ni los baselines ni el global pueden predecir porque no existen al
+momento de entrenar. O sea que **el requisito que §5.6.1 le ponía a M2.5 ya está cumplido
+por construcción.**
+
+**5. El sesgo del global entra al ±5% en los cuatro horizontes:** −0,62% · +0,11% · −0,65% ·
+−1,83% (nivel total). No hay que leerlo como que "corrigió" el sub-pronóstico de horizonte
+largo: ese ya había desaparecido al arreglar el criterio de selección en M1.9 (§5.6.2).
+
+> **Lo que esto NO es.** No es el champion/challenger: eso es **M2.5**, que elige por serie
+> y con la regla prospectiva de ADR-016. Estos son agregados, y un agregado mejor puede
+> convivir con series donde el baseline gana — de hecho el `producto h=12` ya avisa que las
+> hay. Tampoco es una promoción: ningún modelo se promociona sin M2.5.
+
+**Gate de M2, para tenerlo a la vista** (`plan-diseno.md`, punto 3): pide ganar en WAPE a
+nivel **producto y categoría en h=1 y h=3**. Las cuatro celdas dan a favor del global. El
+punto 4 (sesgo dentro de ±5% en h=1/h=3) también. **Con los agregados el gate está**; falta
+que M2.5 lo confirme por serie.
+
+**Gate de salida de M2.3:** el predictor corre dentro del arnés y su reporte es **mergeable
+fila a fila** contra el del piso — demostrado arriba, no afirmado. **307 tests**, `ruff`
+limpio, red de M1.3 sobre `predecir_global` cubierta, **8/8 mutaciones caen**.
+
+#### Tres cosas que la mutación destapó, y que valen más que el número
+
+- **La red de M1.3 encontró un defecto real:** `predecir_global` no recortaba `historia` al
+  corte. Con meses posteriores presentes, el merge de features los dejaba sin catálogo y
+  `mlforecast` cortaba diciendo que `categoria` "cambia en el tiempo" — un mensaje que
+  apunta a cualquier lado menos a la causa.
+- **El clip de negativos parecía código muerto y no lo es, pero por otro motivo del que
+  dice la intuición.** Un ensamble de árboles predice promedios de targets observados, así
+  que **no puede salirse del rango de entrenamiento**: con toda la historia en positivo, una
+  serie "en descenso" nunca da negativo y el test no prueba nada. Lo que sí lo ejercita son
+  los **meses de neto negativo** (notas de crédito grandes), que son reales — T0.4 los
+  siembra y §5.5 #6 los encontró en el extract.
+- **Una mutación que sobrevive no siempre acusa al test.** La de "la ablación no apaga nada"
+  era un no-op: sacaba el `usar_precio` de un filtro que igual no encontraba las columnas.
+  El selector estaba mal, no el test. Conviene mirar la mutación antes de tocar el test.
+
 ## 7. M3 — Jerarquía, cliente y segmentos · S9–S12
 
 | # | Unidad de trabajo | Semana | Entregable / gate |
@@ -991,7 +1119,7 @@ sintético no tiene aún altas de cliente, que es lo que M3.2 va a necesitar jun
 | S4–S5 | — | Deuda del generador (precondición de M2.2, no bloquea M1) | T0.4 | ✅ 2026-07-31 (23 tests) |
 | S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | ✅ **M2.1** 2026-07-31 (67 tests) · **M2.2** 2026-08-04 — `motor/src/motor/features/`, gate de M1.3 cubierto (`pytest -m innegociable`), **274 tests**, `ruff` limpio, **7/7 mutaciones caen**. Validada a escala real en 3 cortes (cobertura 0,9899 sobre filas con precio propio; 2,5 s / 116k filas). **Tres correcciones a la lista de features** en §6.3 → **ADR-013**: el precio deflactado a grano producto es el ancla (identidad, CV 0,0000) y `revenue_real` es el target reescalado, así que la señal pasa a ser el **precio relativo al nivel**; `mismo_mes_año_anterior` era `lag 12`; **`CLIENTE_FEATURE` se difiere a M3.2** porque el extract real no tiene cliente×producto |
 | S6 | M1 | **Selección prospectiva · re-congelado del piso** (cierra §12.5 — unidad agregada, ver §5.7) | M1.9 | ✅ **2026-08-05 — ADR-016**. `backtests/baselines-real-prospectivo-2026-08-05.md`, misma corrida `a79a9b23676b` reusando los checkpoints: **12 segundos**, cero modelos reajustados. El piso pasa a WAPE producto **0,331** (h=1, contra 0,287 retrospectivo) con cobertura h=12 **0,9104** (contra 0,8880), y lo que queda sin cubrir son **12.700 filas = exactamente las altas de catálogo de §5.6.1**. **Hallazgo que sale del alcance de la unidad:** el sub-pronóstico de horizonte largo era del criterio de selección, no de los baselines — el sesgo total cumple el ±5% en los cuatro horizontes, lo que obliga a revisar **ADR-015** antes de ratificarlo. **289 tests**, `ruff` limpio, gate `innegociable` cubierto, **9/9 mutaciones caen**. Detalle en §5.6.2 |
-| S7 | M2 | LightGBM global · cuantiles | M2.3–M2.4 | ⬜ |
+| S7 | M2 | LightGBM global · cuantiles | M2.3–M2.4 | ✅ **M2.3 2026-08-06** — `modelado/modelo_global.py` + `scripts/ablaciones_global.py`. Corre dentro del arnés y su reporte es **mergeable fila a fila** con el del piso (305.309 filas, mismo `id` `a79a9b23676b`, **las mismas 12.700 sin cubrir**). Configuración elegida por medición: **`precio+crudo`** — las features de M2.2 valen 0,0233 de WAPE a h=12 (6% relativo) y `LocalStandardScaler` **empeora 32%** a ese horizonte. Le gana al piso en **11 de 12** celdas nivel×horizonte. **Bloqueante resuelto:** `lightgbm 4.7.0` crashea con `pyarrow` cargado → pin `<4.7` + test en subproceso. **307 tests**, `ruff` limpio. Detalle en §6.4 (cambio de plan) y §6.5. M2.4 ⬜ |
 | S8 | M2 | **Champion/challenger vs piso** | M2.5 | ⬜ |
 | S9 | M3 | Reconciliación jerárquica | M3.1 | ⬜ |
 | S10–S11 | M3 | Propensión cliente×producto · RFM deflactado | M3.2–M3.3 | ⬜ |

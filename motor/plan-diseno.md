@@ -13,13 +13,15 @@
 | # | Pregunta | Decisión | Fundamento |
 |---|---|---|---|
 | 1 | Variable objetivo | **Unidades** por producto (y por segmento) como target primario; a nivel cliente: P(compra) + tamaño esperado; revenue derivado por precio ancla | ADR-007; viabilidad §3.2–3.3 |
-| 2 | Modelo global o por segmento | **Global** (cross-learning) con features categóricas de producto/categoría/laboratorio/segmento; challengers por serie | Evidencia M5; escala del dataset |
+| 2 | Modelo global o por segmento | **Global** (cross-learning) con features categóricas de producto/categoría/laboratorio/**segmento operacional DFV**; challengers por serie | Evidencia M5; escala del dataset |
 | 3 | Tech stack ML | `statsforecast` + `mlforecast` (LightGBM) + `hierarchicalforecast`; sin deep learning en el MVP | Viabilidad §2.8; baselines-first |
 | 4 | Historial de training | **Extract propio desde el snap 2018→** (backfill una vez, incremental después); no depender del data mart de 25 meses del cliente | Único camino a los 96 meses |
 | 5 | Separación física | El motor es **librería Python** dentro del monorepo, invocada por el job batch; no es servicio HTTP propio | Arquitectura; simplicidad MVP |
 | 6 | Dashboard | Fuera del motor (Release 4, frontend) | Fronteras de módulos |
 | 7 | Frecuencia de reentrenamiento | **Mensual**, alineada al cierre de mes de hechos; inferencia nocturna puede releer el último modelo | Grano mensual: reentrenar más seguido no aporta |
 | 8 | Clustering explícito | **No** como feature (ADR-005); opcional como pooling interno con Ward determinístico si el EDA muestra segmentos de comportamiento muy distintos | ADR-005; evaluar post-M2 |
+
+**Cuál "segmento" es el de la decisión 2.** El **operacional de DFV** (`CLIENTE_FEATURE`), el único que ADR-005 admite como feature — **nuestro `cluster_id` de RFM nunca entra** (ver *El segmento es salida, no entrada* en M3). Leído al revés, ese casillero parece contradecir ADR-005. Además solo aplica al modelo **cliente×producto de M3.2**: una fila producto-mes de M2.3 no tiene cliente, así que no tiene segmento.
 
 **Multi-horizonte:** estrategia **directa** — un modelo por horizonte (h=1..12, o al menos h∈{1,3,6,12}) en vez de recursiva. No acumula error de predicciones encadenadas y permite features específicas por horizonte. Costo: más entrenamientos — trivial a esta escala.
 
@@ -55,6 +57,25 @@
 - Clustering RFM propio (sobre montos **deflactados**, CP-INF-04) versionado por corrida; contraste contra la segmentación operacional DFV (CP-SEG-01).
 - Clientes nuevos (< 6 meses): prior del segmento operacional más cercano.
 - **Entregable:** suite completa de predicciones coherentes + propensiones, con métricas por nivel.
+
+#### El segmento es salida, no entrada
+
+Pregunta recurrente: *si segmentamos clientes, ¿la salida no debería ser el segmento **más** su predicción?* Sí — y lo es. **La predicción por segmento se entrega**, los CU la prometen y `viabilidad.md` §3.2 la da por alcanzable. Lo que ADR-005 fija no es *si* se entrega, sino **cuándo entra el segmento al pipeline**:
+
+```
+(A) Segmento como ENTRADA — descartada
+    clusterizar clientes → cluster_id entra al modelo (o un modelo por cluster)
+                        → el modelo predice la demanda del cluster
+
+(B) Segmento como SALIDA — la decidida
+    modelo global predice al grano fino (producto; cliente×producto = propensión)
+                        → se agrega / filtra por cluster para presentar
+                        → "demanda del segmento 3" = suma de sus miembros
+```
+
+Las dos muestran lo mismo en pantalla; en (B) el número del segmento **se deriva** de predicciones más finas. Los tres motivos —IDs de cluster inestables entre corridas, no fragmentar el modelo global, y que el segmento es un eje **ortogonal** al árbol de reconciliación de M3.1— están desarrollados en la aclaración del **ADR-005** (2026-08-06), que es la fuente para citar si alguien lo pregunta.
+
+Consecuencia práctica para M3.1: el árbol a reconciliar es **total → categoría → laboratorio → producto** y el segmento **no es un nivel de ese árbol**. Meterlo obligaría a reconciliar un cubo (dos jerarquías cruzadas) en vez de un árbol; agregando desde abajo, los totales por segmento cierran por construcción.
 
 ### M4 — Empaquetado batch e integración
 - Corrida = `EJECUCION_MODELO` (tipo, versión, hiperparámetros JSONB, métricas de backtest) → escribe `PREDICCION_DEMANDA` (con `limite_inferior/superior`) y segmentos.

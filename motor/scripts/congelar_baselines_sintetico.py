@@ -35,7 +35,7 @@ import pandas as pd
 
 from motor.backtesting.arnes import ejecutar_backtest
 from motor.backtesting.reporte import a_markdown, construir_reporte
-from motor.clasificacion import SIN_ACTIVIDAD, clasificar_series, etiquetar
+from motor.clasificacion import clasificar_series, etiquetar, muestra_estratificada
 from motor.datos.archivos import RepositorioArchivos
 from motor.modelado.seleccion import (
     CANDIDATOS,
@@ -124,31 +124,6 @@ def parsear_argumentos(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _muestra_estratificada(
-    hechos: pd.DataFrame, n_por_cuadrante: int, semilla: int
-) -> tuple[pd.DataFrame, dict[str, int]]:
-    """Toma hasta `n_por_cuadrante` productos de cada cuadrante de intermitencia.
-
-    Devuelve los hechos recortados y cuántos productos quedaron por cuadrante — el
-    conteo va a la tabla: si algún cuadrante tenía menos de N y se tomaron todos, eso
-    tiene que verse, no quedar como un recorte silencioso.
-
-    `sin_actividad` se excluye: no es un cuadrante sino la ausencia de señal, y es el
-    mismo criterio con el que `distribucion_cuadrantes` compara contra el EDA.
-    """
-    clasificacion = clasificar_series(hechos)
-    activos = clasificacion[clasificacion["cuadrante"] != SIN_ACTIVIDAD]
-
-    # Barajar y tomar los primeros N de cada grupo, en vez de `groupby().apply(sample)`:
-    # da lo mismo, no usa el `include_groups` que pandas deprecó, y un cuadrante con
-    # menos de N productos devuelve todos los que tenga sin caso especial.
-    barajado = activos.sample(frac=1, random_state=semilla)
-    elegidos = barajado.groupby("cuadrante", observed=True).head(n_por_cuadrante)
-
-    conteo = elegidos["cuadrante"].value_counts().to_dict()
-    return hechos[hechos["id_producto"].isin(elegidos["id_producto"])], conteo
-
-
 def main(argv: list[str] | None = None) -> int:
     args = parsear_argumentos(argv)
 
@@ -185,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
     productos_totales = hechos["id_producto"].nunique()
     conteo_cuadrantes: dict[str, int] = {}
     if args.estratificado is not None:
-        hechos, conteo_cuadrantes = _muestra_estratificada(
+        hechos, conteo_cuadrantes = muestra_estratificada(
             hechos, args.estratificado, args.semilla
         )
     elif args.n_productos is not None:

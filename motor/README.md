@@ -51,18 +51,20 @@ comparando contra ese archivo. Quitá `--sin-contrato` solo si necesitás los
 Layout `src/`: el paquete importable es `motor` (`motor/src/motor/`). Ya existen `datos/`
 (T0.3, más el IPC del INDEC empaquetado en M2.1), `backtesting/` (M1.0–M1.3, ver su propio
 [README](src/motor/backtesting/README.md)), `clasificacion.py` (M1.4: cuadrantes
-Syntetos-Boylan por serie), `modelado/` (M1.5–M1.7: baselines `statsforecast`, rama
-intermitente y selección por serie, ver su propio
-[README](src/motor/modelado/README.md)) y `deflacion/` (M2.1: ADR-002 de punta a punta, ver
-su propio [README](src/motor/deflacion/README.md)). El resto de los subpaquetes se agregan
-en sus propias unidades de trabajo del roadmap.
+Syntetos-Boylan por serie y muestreo estratificado), `modelado/` (M1.5–M1.9 y **M2.3**:
+baselines `statsforecast`, rama intermitente, las dos selecciones y el **modelo global
+LightGBM**, ver su propio [README](src/motor/modelado/README.md)), `deflacion/` (M2.1:
+ADR-002 de punta a punta, ver su propio [README](src/motor/deflacion/README.md)) y
+`features/` (M2.2: lo que come el modelo global, ver su propio
+[README](src/motor/features/README.md)). El resto de los subpaquetes se agregan en sus
+propias unidades de trabajo del roadmap.
 
 Fuera del paquete hay dos carpetas de scripts, ninguna importable por el job batch:
 
 - [`ejemplos/`](ejemplos/) — documentación ejecutable de cada pieza, para explorar y tocar.
-- [`scripts/`](scripts/) — operación del track. Hoy:
-  `congelar_baselines_sintetico.py`, que genera la tabla de referencia de M1.7/M1.8 en
-  `backtests/`.
+- [`scripts/`](scripts/) — operación del track. Hoy: `extraer_snap.py` (el extract real),
+  `congelar_baselines_sintetico.py` (la tabla de referencia de M1.7/M1.8/M1.9) y
+  `ablaciones_global.py` (con qué configuración el global de M2.3 llega a M2.5).
 
 ```bash
 pytest                     # toda la suite

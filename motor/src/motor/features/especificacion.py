@@ -49,12 +49,18 @@ DATE_FEATURES = ["month"]
 """Mes del año. `mlforecast` lo deriva del índice temporal, así que no necesita datos."""
 
 STATIC_FEATURES = ["categoria", "laboratorio", "precio_ancla"]
-"""Columnas constantes por serie dentro de un corte, que van en `fit(static_features=...)`.
+"""Columnas **constantes por serie dentro de un corte**.
 
-`precio_ancla` es estática **a propósito**: es la escala de precio del producto, lo que
-separa una jeringa de $20 de una vacuna de $20.000. Su falta de variación temporal no es
-un defecto — la señal temporal de precio la llevan las columnas de
-`motor.features.precio`, que son otras (ver el README de este paquete).
+`precio_ancla` es estática a propósito: es la escala de precio del producto, lo que separa
+una jeringa de $20 de una vacuna de $20.000. Su falta de variación temporal no es un
+defecto — la señal temporal de precio la llevan las columnas de `motor.features.precio`.
+
+⚠️ **Esta lista describe la naturaleza de las columnas, no lo que M2.3 le pasa a
+`fit(static_features=...)`.** Las dos listas coincidían hasta que M2.3 chocó con una
+validación de `mlforecast`: compara el primer valor de la serie contra el último con `!=`, y
+como **`NaN != NaN` es `True`**, un producto sin ancla —nulo en *todas* sus filas— aborta la
+corrida entera diciendo que "cambia en el tiempo". Así que `precio_ancla` viaja por `X_df`
+igual que las demás de precio. Ver `modelado/modelo_global.py::COLUMNAS_DINAMICAS`.
 """
 
 COLUMNAS_PRECIO = [

@@ -8,7 +8,14 @@ dependencies = [
     "pyarrow>=16,<19",
     "statsforecast>=1.7,<2",
     "mlforecast>=0.13,<1",
-    "lightgbm>=4.3,<5",
+    # Tope en 4.7 a propósito (M2.3, 2026-08-05). Con `lightgbm==4.7.0` en Windows,
+    # `LGBMRegressor.fit` muere con `OSError: access violation` si `pyarrow` se importó
+    # antes — o sea SIEMPRE acá, porque la capa de datos lee parquet. Es conflicto de
+    # runtimes en la carga de DLLs, no un problema de los datos: falla igual con arrays
+    # contiguos, sin columnas `category` y con `n_jobs=1`, y `KMP_DUPLICATE_LIB_OK` no lo
+    # arregla. 4.6.0 no lo tiene (verificado 3/3 en ambos sentidos).
+    # Antes de subir el tope, corré `tests/test_entorno_lightgbm.py`: falla con 4.7.0.
+    "lightgbm>=4.3,<4.7",
     "hierarchicalforecast>=0.4,<1",
     "utilsforecast>=0.1.10,<1",
 ]

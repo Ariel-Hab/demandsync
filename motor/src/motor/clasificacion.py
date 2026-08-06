@@ -166,6 +166,43 @@ def distribucion_cuadrantes(clasificacion: pd.DataFrame) -> dict[str, float]:
     return (clasificados["cuadrante"].value_counts(normalize=True) * 100).to_dict()
 
 
+def muestra_estratificada(
+    hechos: pd.DataFrame,
+    n_por_cuadrante: int,
+    semilla: int = 42,
+    columna_id: str = "id_producto",
+) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Hasta `n_por_cuadrante` productos de cada cuadrante, con semilla fija.
+
+    Es el muestreo con el que se congeló la tabla sintética de M1.7 (`roadmap-motor.md`
+    §5.2): estratificar da mejores estadísticas por cuadrante que la distribución natural,
+    donde `lumpy` es ~11%.
+
+    **Vive en el paquete y no en el script que la usa** porque cualquier corrida que quiera
+    compararse contra esa tabla tiene que muestrear **exactamente igual** — misma semilla,
+    mismo criterio, mismo orden. Dos implementaciones equivalentes que sortean distinto
+    producen tablas que parecen comparables y no lo son (M2.3).
+
+    `sin_actividad` se excluye: no es un cuadrante sino la ausencia de señal, el mismo
+    criterio con el que `distribucion_cuadrantes` compara contra el EDA.
+
+    Devuelve los hechos recortados y cuántos productos quedaron por cuadrante — el conteo
+    va a la tabla: si algún cuadrante tenía menos de `n_por_cuadrante` y se tomaron todos,
+    eso tiene que verse y no quedar como un recorte silencioso.
+    """
+    clasificacion = clasificar_series(hechos)
+    activos = clasificacion[clasificacion["cuadrante"] != SIN_ACTIVIDAD]
+
+    # Barajar y tomar los primeros N de cada grupo, en vez de `groupby().apply(sample)`:
+    # da lo mismo, no usa el `include_groups` que pandas deprecó, y un cuadrante con
+    # menos de N productos devuelve todos los que tenga sin caso especial.
+    barajado = activos.sample(frac=1, random_state=semilla)
+    elegidos = barajado.groupby("cuadrante", observed=True).head(n_por_cuadrante)
+
+    conteo = elegidos["cuadrante"].value_counts().to_dict()
+    return hechos[hechos[columna_id].isin(elegidos[columna_id])], conteo
+
+
 def etiquetar(reporte: pd.DataFrame, clasificacion: pd.DataFrame) -> pd.DataFrame:
     """Pega la columna `cuadrante` a un reporte de backtest para desagregarlo (gate M1.2).
 
