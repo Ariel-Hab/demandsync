@@ -234,3 +234,63 @@ arma un subdirectorio por variante.
 Es la contracara del mismo hecho que abarata M2.5: como el `id` no depende del predictor,
 una corrida del global sobre los mismos datos y cortes es **mergeable fila a fila** contra
 el reporte de baselines ya congelado, sin re-correr los 7.
+
+## `global_vs_baselines.py` — champion/challenger contra el piso (M2.5)
+
+Cruza dos corridas **ya ejecutadas** y emite el reporte comparativo. **No reajusta ningún
+modelo**: la corrida real completa son **45 segundos**.
+
+```bash
+motor/.venv/Scripts/python motor/scripts/global_vs_baselines.py \
+    --hechos C:/dfv-extract-v2 --etiqueta real --estratificado 0 \
+    --checkpoints-baselines C:/dfv-checkpoints-2026-08-03 \
+    --checkpoints-global    C:/dfv-checkpoints-intervalos
+```
+
+Los tres contendientes: `piso` (7 baselines, selección prospectiva + cascada), `global`
+(`GlobalLGBM` en todas las series, sin selección) y `champion` (los 9 candidatos
+compitiendo). `global_P50` va de cuarto, para contrastar. **El champion se elige con la
+misma regla que el piso** —por corte, con lo ya observado— porque darle trato retrospectivo
+inclinaría la cancha a su favor (ADR-016 punto 4).
+
+### Por qué cuesta 45 segundos
+
+El `id` de corrida es hash de configuración + datos y **no incluye el predictor**, así que
+dos corridas sobre los mismos datos y cortes tienen exactamente las mismas filas y se cruzan
+por `(producto, mes, corte, horizonte)`. Es la contracara del hecho que obliga a un
+directorio por variante en `ablaciones_global.py`. Rehacer las corridas costaría 294 min de
+baselines más 19 de global.
+
+La relectura pasa por `ejecutar_backtest` con un **predictor prohibido**: si el arnés lo
+invoca es que a los checkpoints les falta un corte, y ahí corta. Completar en silencio
+daría un reporte mitad checkpoint mitad recalculado, indistinguible del completo.
+
+### Para el sintético hay que producir los checkpoints primero
+
+El script solo cruza; no corre modelos. Sobre sintético eso significa tres pasos, y **el
+`--estratificado` tiene que ser el mismo en los tres** o el `id` no coincide:
+
+```bash
+motor/.venv/Scripts/python motor/scripts/congelar_baselines_sintetico.py \
+    --estratificado 100 --n-jobs 4 --seleccion prospectiva \
+    --checkpoint-dir C:/dfv-checkpoints-m25-sint-baselines          # ~90 min
+motor/.venv/Scripts/python motor/scripts/intervalos_global.py \
+    --estratificado 100 --checkpoint-dir C:/dfv-checkpoints-m25-sint-global
+motor/.venv/Scripts/python motor/scripts/global_vs_baselines.py \
+    --etiqueta sintetico \
+    --checkpoints-baselines C:/dfv-checkpoints-m25-sint-baselines \
+    --checkpoints-global    C:/dfv-checkpoints-m25-sint-global
+```
+
+⚠️ **No sirve reusar `baselines-sintetico-2026-07-30.md` ni sus checkpoints**: se congelaron
+antes de que T0.4 reescribiera el generador, así que son de otro dataset (§6.4).
+
+### Lo que el script se niega a hacer en silencio
+
+- **Cruzar corridas con `id` distinto** — son otros datos u otros cortes, y las filas
+  cruzarían por casualidad de nombre.
+- **Cruzar sobre la intersección.** Si una clave no está en los dos reportes, corta: comparar
+  sobre lo común premia al que predijo menos filas, que es el sesgo por omisión de §5.6.1.
+- **Aceptar un `real` distinto** para la misma clave, aunque el `id` coincida.
+- **Sufijar columnas de modelo repetidas.** Un `pred` en los dos lados saldría `pred_x`/
+  `pred_y` y la selección tomaría una sola sin avisar.

@@ -177,6 +177,30 @@ def a_markdown(tablas: dict[str, pd.DataFrame], titulo: str, notas: str = "") ->
 
     orden = [
         ("corrida", "Corrida"),
+        (
+            "veredicto",
+            "Cabeza a cabeza por nivel y horizonte (M2.5) — **solo se comparan WAPE con "
+            "la misma `cobertura`**",
+        ),
+        (
+            "veredicto_por_cuadrante",
+            "Cabeza a cabeza **por cuadrante** (grano producto) — leer con la columna "
+            "`peso_%`: es cuánto pesa cada cuadrante en el WAPE agregado de arriba",
+        ),
+        (
+            "mejora_global_vs_piso",
+            "¿En cuántas series le gana el global al piso? `mejora = wape(piso) − "
+            "wape(global)`, positivo favorece al global",
+        ),
+        (
+            "mejora_champion_vs_global",
+            "¿Paga elegir por serie? `mejora = wape(global) − wape(champion)`, positivo "
+            "favorece a la selección",
+        ),
+        ("reparto_champion", "Modelo ganador del champion por cuadrante (pares serie×corte)"),
+        ("reparto_piso", "Modelo ganador del piso por cuadrante, para contrastar"),
+        ("estabilidad_champion", "Cambios de ganador del champion a lo largo de los cortes"),
+        ("origen_champion", "Origen de cada predicción del champion (ganador / cascada / nadie)"),
         ("ganadores_por_cuadrante", "Modelo ganador por cuadrante (selección por serie, M1.7)"),
         (
             "ganadores_por_cuadrante_y_corte",

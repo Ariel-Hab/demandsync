@@ -676,7 +676,7 @@ congelada, no que se haya congelado con un criterio en particular. Lo que M1.9 c
 | **M2.2** | Features: lags (1,2,3,6,12), rolling means (3,6,12), mes del año, categoría/laboratorio, escala de precio (ancla) y **precio relativo al nivel** con su variación. *(Tres correcciones a la lista original, medidas: ver §6.3 y ADR-013)* | S5–S6 | **✅ CERRADA 2026-08-04** — `motor/src/motor/features/`: `especificacion.py` (lo que ejecuta `mlforecast`) + `precio.py` + `construccion.py`. Pasa la red de M1.3 (`pytest -m innegociable`). **274 tests**, `ruff` limpio; las **7 mutaciones caen**. Validado a escala real en 3 cortes: cobertura 0,9899 sobre filas con precio propio, CV intra-producto 0,1511, **2,5 s** sobre 116k filas |
 | **M2.3** | LightGBM global con `mlforecast`, **multi-horizonte directo** (`max_horizon=12`: un modelo por horizonte) | S6–S7 | Corre dentro del arnés, comparable 1:1 con el piso. **✅ 2026-08-06** — ver §6.5. Se cumple en sentido literal: los dos reportes se mergean fila a fila y las filas sin cubrir son las mismas |
 | **M2.4** | Intervalos: quantile regression P10/P50/P90 | S7 | Cobertura empírica de los intervalos reportada (¿el P10–P90 cubre ~80%?). **✅ CERRADA 2026-08-06** — `backtests/intervalos-global-real-2026-08-06.md`: **0,7798 / 0,8199 / 0,8130 / 0,8085** contra el 0,80 nominal. Ver §6.6 |
-| **M2.5** | **Champion/challenger por serie** + reporte comparativo contra el piso congelado, sobre sintético **y** real | S8 | `motor/backtests/global-vs-baselines-<fecha>.md` |
+| **M2.5** | **Champion/challenger por serie** + reporte comparativo contra el piso congelado, sobre sintético **y** real | S8 | `motor/backtests/global-vs-baselines-<fecha>.md`. **✅ CERRADA 2026-08-06 — ADR-017: lo promocionable es el champion, no el global solo.** El global solo **no cumple el gate** (a h=12 producto da 0,3746 contra 0,3699 del piso) y en `intermitente`/`lumpy` —31% de los productos, 0,6% del peso del WAPE— es **2 a 3 veces peor que el baseline**. El champion gana los cuatro horizontes: **0,3230 / 0,3667 / 0,3928 / 0,3644**. Ver §6.7 |
 
 **Gate de salida de M2** (= puntos 2–4 de la Definición de listo de `plan-diseno.md`), **precisado por horizonte en ADR-015 (2026-08-05)** porque el piso real incumple el ±5% en h=6/h=12 (§5.6.1):
 
@@ -684,6 +684,8 @@ congelada, no que se haya congelado con un criterio en particular. Lo que M1.9 c
 - **h=6 y h=12:** alcanza **empatar** el WAPE del piso, **y además** reportar la **cobertura empírica** del intervalo P10–P90 (M2.4). El sesgo se mide y se publica con su signo, y **se compara contra el del piso**: el gate exige que el global *corrija* el sub-pronóstico largo (−5,2% / −6,0%), no que se le perdone.
 
 **ADR-015 acota lo que el producto le promete al usuario, no la vara del modelo** — no leerlo al revés. Donde no gana, **manda el baseline**: el resultado legítimo de M2 puede ser "el baseline se queda con el 30% de las series", y eso se documenta, no se esconde.
+
+> **✅ Gate cumplido el 2026-08-06, por el champion y no por el global solo** (§6.7, ADR-017). h=1/h=3: gana WAPE a producto y categoría, sesgo total dentro del ±5%. h=6/h=12: **gana**, no solo empata, a producto y categoría; la cobertura del intervalo la reportó M2.4. El global aplicado a todas las series **no lo cumple** —pierde a h=12 contra el piso—, así que el "donde no gana manda el baseline" no era una salida de emergencia: era el resultado. Y el reparto real fue **84%** para los baselines, no 30%.
 
 **Riesgo específico:** validar solo en sintético haría ver al modelo mejor de lo que es (el generador no tiene la irregularidad del mundo real). Por eso M2.5 exige la corrida real.
 
@@ -1183,6 +1185,136 @@ diagnosticó un cuelgue que no existía y se bajó una corrida sana. **La señal
 una corrida del arnés son los checkpoints en disco**, que además llevan la marca de tiempo del
 corte; el contador de CPU no sirve en esta máquina.
 
+### 6.7 M2.5 cerrada — el champion gana, y el global solo no era promocionable (2026-08-06)
+
+**De dónde parte.** §6.5 cerró M2.3 con "el global le gana al piso en 11 de 12 celdas" y esa
+frase, sola, dice *reemplacen los baselines por el global*. §6.5 mismo avisó que no: son
+agregados, y "un agregado mejor puede convivir con series donde el baseline gana". M2.5 es
+la unidad que va a mirar eso. Entregable: `backtests/global-vs-baselines-real-2026-08-06.md`
+(corrida `a79a9b23676b`) y `-sintetico-`.
+
+**Costó 45 segundos y no reajustó un solo modelo.** Los checkpoints de las dos corridas
+comparten `id` —el hash es de configuración + datos y **no incluye el predictor**— así que se
+cruzan fila a fila por `(producto, mes, corte, horizonte)`: 305.309 filas, todas en ambos.
+Es la contracara del mismo hecho que obliga a un directorio por variante en las ablaciones.
+Rehacer las dos corridas costaba 294 min + 19 min.
+
+#### 1. El veredicto, y por qué el titular de §6.5 estaba incompleto
+
+WAPE a grano producto, contra el piso prospectivo, **a cobertura idéntica en las 12 celdas**:
+
+| | h=1 | h=3 | h=6 | h=12 |
+|---|---|---|---|---|
+| piso (7 baselines, prospectivo) | 0,3305 | 0,3767 | 0,4001 | 0,3699 |
+| global solo | **0,2953** | **0,3435** | **0,3834** | 0,3746 ❌ |
+| champion (9 candidatos) | 0,3230 | 0,3667 | 0,3928 | **0,3644** |
+
+**El global solo no cumple el gate de M2**: a h=12 pierde contra el piso (el gate pedía al
+menos empatar). El champion gana los cuatro horizontes a grano producto, los cuatro a
+categoría, y tres de cuatro a nivel total —pierde h=12 por 0,0014—, con **sesgo dentro del
+±5% en los cuatro** (−0,31% / +0,77% / −1,49% / −0,82%). **El gate de M2 está cumplido, y lo
+cumple el champion.** Ver ADR-017.
+
+> **Una cláusula del gate quedó sin objeto, y conviene decirlo antes de que alguien la lea
+> como incumplida.** El gate pedía además que el global *"corrija el sub-pronóstico largo
+> (−5,2% / −6,0%)"*. Ese sub-pronóstico **ya no existe**: era del criterio de selección
+> retrospectivo y desapareció en M1.9 (§5.6.2) — el piso prospectivo da **−1,00% (h=6)** y
+> **−0,90% (h=12)**. No hay nada que corregir, y el champion queda en −1,49% y −0,82%, del
+> mismo orden y adentro del ±5%. La cláusula se escribió sobre la evidencia vieja, igual que
+> ADR-015.
+
+#### 2. Lo que el agregado tapaba: el WAPE es 86% `suave`
+
+El WAPE pondera por magnitud y las magnitudes van de jeringas a vacunas. Participación en la
+suma de `|real|`, y WAPE a grano producto por cuadrante:
+
+| cuadrante | peso_% | productos | piso h=12 | global h=12 | champion h=12 |
+|---|---|---|---|---|---|
+| `suave` | **85,6** | 1.224 | 0,3310 | **0,3149** | 0,3229 |
+| `erratica` | 13,8 | 239 | 0,5535 | 0,5789 | 0,5575 |
+| `intermitente` | **0,4** | 488 | 1,2254 | **3,4260** | 1,3426 |
+| `lumpy` | **0,2** | 177 | 2,5491 | **5,6294** | 2,7709 |
+
+**El global es 2 a 3 veces peor que el baseline en el 31% de los productos, y el agregado no
+lo ve porque esas series cargan el 0,6% del peso.** El modo de falla es sobre-pronóstico y
+**empeora con el horizonte**: el sesgo del global en `lumpy` va de +0,59 (h=1) a **+5,11**
+(h=12). Es coherente con lo que un modelo global hace —predice la media condicional de
+productos parecidos, y en una serie que vende a ráfagas esa media está muy por encima del mes
+típico— pero produce sugerencias de compra inservibles justo donde el usuario más las
+necesita.
+
+**El champion paga por arreglarlo:** en `suave` es peor que el global solo (0,2954 contra
+0,2654 a h=1). Es varianza de selección — reelegir por corte con evidencia limitada a veces
+elige mal. El intercambio es perder ~0,03 de WAPE en el 86% del peso para ganar entre 1,5 y
+2,9 en el 31% de los productos, y se acepta porque el producto sugiere órdenes **por
+producto** (ADR-017).
+
+#### 3. El reparto: los baselines se quedan con el 84%
+
+Pares (serie, corte) ganados, de 38.014:
+
+| | pares | % |
+|---|---|---|
+| 7 baselines | 31.804 | **83,7** |
+| `GlobalLGBM_P50` | 3.512 | 9,2 |
+| `GlobalLGBM` | 2.698 | 7,1 |
+
+`plan-diseno.md` §M2 anticipaba "el baseline se queda con el 30% de las series" como
+resultado legítimo. El número real es **84%**, y no cambia la conclusión: el global aporta
+donde aporta, que es donde está el volumen. `SeasonalNaive` sigue siendo el que más gana
+(13.039), igual que en el piso.
+
+#### 4. El P50 competía mucho y aportaba casi nada — y el sesgo lo descalifica
+
+§6.6 punto 4 lo había dejado abierto: la mediana le ganaba a la media a h=12 (0,3627 contra
+0,3746), justo en la celda que M2.3 perdía. M2.5 lo hizo competir por corte con la regla
+prospectiva, que era la forma limpia de resolverlo, y dio dos respuestas:
+
+- **Gana 3.512 turnos de selección —más que `GlobalLGBM`— y mueve el WAPE del champion entre
+  0,0008 y 0,0018.** La variante `--sin-p50` da 0,3242 / 0,3674 / 0,3946 / 0,3652: cuarta
+  decimal. Que sea elegido tanto tiene explicación: **la selección usa MASE, que es error
+  absoluto, y la mediana es el minimizador del error absoluto**. Compite con ventaja en el
+  criterio de selección y esa ventaja no se traduce al WAPE.
+- **Su sesgo viola ADR-008:** a nivel total va de **−8,4% a −13,4%**, fuera del ±5% en todos
+  los horizontes, porque la mediana de una distribución sesgada a derecha está
+  sistemáticamente por debajo de la media. Esto solo ya lo descalifica como estimador
+  puntual, y §6.6 no podía verlo porque miró WAPE.
+
+**Queda como candidato del champion, no como estimador puntual** (ADR-017 punto 3). Donde sí
+es notablemente mejor que los dos es en `intermitente`/`lumpy` a h=1 (0,586 contra 0,960 del
+global) — coherente con que la mediana de una serie intermitente es baja o cero.
+
+#### 5. Sumar candidatos no compró cobertura ni estabilidad
+
+- **Cobertura: 12.700 filas sin predicción**, exactamente las mismas del piso y del global.
+  Nueve candidatos no cubren una fila más: son las altas de catálogo de §5.6.1, productos que
+  no existían al corte. La comparación es a igual cobertura **por construcción**.
+- **Estabilidad: idéntica.** 335 series (15,7%) conservan ganador en los 18 cortes con 7
+  candidatos y **las mismas 335** con 9; la mediana de cambios sube de 6 a 7. Agregar
+  candidatos no estabiliza la selección, la agita un poco más.
+
+#### Lo que le deja al PM y al Analista
+
+El punto 4 de ADR-017: **decidir con el desagregado por cuadrante en la mano es lo que evitó
+promocionar el global**, y eso implica que la precisión que el producto promete se cumple de
+forma muy distinta según la serie. Es la misma forma del hallazgo de M2.4 con la cobertura del
+intervalo, y **se suma a las dos revisiones que ADR-015 ya tenía pendientes**. Registrado en
+`planning/roadmap.md`.
+
+#### Una trampa del método que esta unidad convirtió en guarda
+
+**Una serie que un modelo no predijo saca WAPE 0,0 — perfecto.** En `metricas.wape` la
+predicción nula aporta 0 al numerador, y lo único que lo delata es la columna `cobertura`. Es
+la convención documentada del módulo, no un defecto, pero significa que comparar dos modelos
+"donde los dos tienen WAPE definido" **corona ganador al que no predijo**. La primera versión
+de `distribucion_de_mejora` hacía exactamente eso; lo cazó un test, y ahora la comparabilidad
+exige cobertura **mayor que cero e igual** entre los dos. Vale para cualquier comparación
+futura entre predictores, no solo para esta.
+
+**Gate de salida de M2.5:** reporte comparativo contra el piso congelado, sobre sintético y
+real, con el reparto por serie. **Cumplido.** **367 tests**, `ruff` limpio, **13/13
+mutaciones caen**.
+
 ## 7. M3 — Jerarquía, cliente y segmentos · S9–S12
 
 | # | Unidad de trabajo | Semana | Entregable / gate |
@@ -1246,7 +1378,7 @@ corte; el contador de CPU no sirve en esta máquina.
 | S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | ✅ **M2.1** 2026-07-31 (67 tests) · **M2.2** 2026-08-04 — `motor/src/motor/features/`, gate de M1.3 cubierto (`pytest -m innegociable`), **274 tests**, `ruff` limpio, **7/7 mutaciones caen**. Validada a escala real en 3 cortes (cobertura 0,9899 sobre filas con precio propio; 2,5 s / 116k filas). **Tres correcciones a la lista de features** en §6.3 → **ADR-013**: el precio deflactado a grano producto es el ancla (identidad, CV 0,0000) y `revenue_real` es el target reescalado, así que la señal pasa a ser el **precio relativo al nivel**; `mismo_mes_año_anterior` era `lag 12`; **`CLIENTE_FEATURE` se difiere a M3.2** porque el extract real no tiene cliente×producto |
 | S6 | M1 | **Selección prospectiva · re-congelado del piso** (cierra §12.5 — unidad agregada, ver §5.7) | M1.9 | ✅ **2026-08-05 — ADR-016**. `backtests/baselines-real-prospectivo-2026-08-05.md`, misma corrida `a79a9b23676b` reusando los checkpoints: **12 segundos**, cero modelos reajustados. El piso pasa a WAPE producto **0,331** (h=1, contra 0,287 retrospectivo) con cobertura h=12 **0,9104** (contra 0,8880), y lo que queda sin cubrir son **12.700 filas = exactamente las altas de catálogo de §5.6.1**. **Hallazgo que sale del alcance de la unidad:** el sub-pronóstico de horizonte largo era del criterio de selección, no de los baselines — el sesgo total cumple el ±5% en los cuatro horizontes, lo que obliga a revisar **ADR-015** antes de ratificarlo. **289 tests**, `ruff` limpio, gate `innegociable` cubierto, **9/9 mutaciones caen**. Detalle en §5.6.2 |
 | S7 | M2 | LightGBM global · cuantiles | M2.3–M2.4 | ✅ **M2.3 2026-08-06** — `modelado/modelo_global.py` + `scripts/ablaciones_global.py`. Corre dentro del arnés y su reporte es **mergeable fila a fila** con el del piso (305.309 filas, mismo `id` `a79a9b23676b`, **las mismas 12.700 sin cubrir**). Configuración elegida por medición: **`precio+crudo`** — las features de M2.2 valen 0,0233 de WAPE a h=12 (6% relativo) y `LocalStandardScaler` **empeora 32%** a ese horizonte. Le gana al piso en **11 de 12** celdas nivel×horizonte. **Bloqueante resuelto:** `lightgbm 4.7.0` crashea con `pyarrow` cargado → pin `<4.7` + test en subproceso. **307 tests**, `ruff` limpio. Detalle en §6.4 (cambio de plan) y §6.5. · ✅ **M2.4 2026-08-06** — `backtesting/intervalos.py` + `modelado/modelo_global.py(cuantiles=)` + `scripts/intervalos_global.py`; tabla en `backtests/intervalos-global-real-2026-08-06.md` (misma corrida, 19,4 min). Cobertura empírica del P10–P90 **0,7798 / 0,8199 / 0,8130 / 0,8085** contra el 0,80 nominal, **sin recalibrar**. **Pero el agregado cancela dos errores opuestos:** `suave` calibra perfecto y `erratica` **sub-cubre 12 puntos** en los cuatro horizontes, mientras `intermitente`/`lumpy` sobre-cubren con amplitudes de hasta 13x el real → **decisión para el PM sobre ADR-015** (§6.6). El intervalo se invierte en **1 fila de 105.890**, así que M4.1 no necesita reordenar. El WAPE del punto reproduce **exacto** el de M2.3. **329 tests**, `ruff` limpio, **9/9 mutaciones caen**. Detalle en §6.6 |
-| S8 | M2 | **Champion/challenger vs piso** | M2.5 | ⬜ |
+| S8 | M2 | **Champion/challenger vs piso** | M2.5 | ✅ 2026-08-06 (§6.7, ADR-017) |
 | S9 | M3 | Reconciliación jerárquica | M3.1 | ⬜ |
 | S10–S11 | M3 | Propensión cliente×producto · RFM deflactado | M3.2–M3.3 | ⬜ |
 | S12 | M3 | Clientes nuevos · cierre de métricas por nivel | M3.4 | ⬜ |

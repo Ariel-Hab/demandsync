@@ -27,7 +27,7 @@ baselines-real-<AAAA-MM-DD>.md               # M1.8 — snap real, selección re
 baselines-real-prospectivo-<AAAA-MM-DD>.md   # M1.9 — snap real, prospectiva. EL piso a batir
 ablaciones-global-<fuente>-<AAAA-MM-DD>.md   # M2.3 — qué configuración lleva el global a M2.5
 intervalos-global-<fuente>-<AAAA-MM-DD>.md   # M2.4 — calibración del P10–P90
-global-vs-baselines-<AAAA-MM-DD>.md          # M2.5 — champion/challenger contra el piso
+global-vs-baselines-<fuente>-<AAAA-MM-DD>.md # M2.5 — champion/challenger contra el piso
 ```
 
 ## Qué tiene que traer cada tabla para ser congelable

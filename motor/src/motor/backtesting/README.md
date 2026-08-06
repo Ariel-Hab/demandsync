@@ -27,6 +27,8 @@ es la referencia rápida de **cómo usar el código**, no repite el diseño.
 | `arnes.py` | `ejecutar_backtest(datos, predecir, ...)` — el punto de entrada único. Densifica, orquesta cortes y llama a un predictor pluggable. Con `directorio_checkpoint` la corrida es reanudable (M1.7a). |
 | `metricas.py` | `wape()`, `sesgo()` (implementación propia) y `mase()` (wrapper de `utilsforecast`; densifica su `train_df`). |
 | `intervalos.py` | **M2.4**: `cobertura_empirica()`, `pinball()` y `tasa_de_cruce()` — la calibración del P10–P90, que ADR-015 punto 2 convierte en el compromiso del producto para h=6/h=12. |
+| `checkpoints.py` | **M2.5**: `cargar_desde_checkpoints()` relee una corrida ya ejecutada sin predecir nada, y `cruzar_reportes()` cruza dos que compartan `id` (el hash no incluye el predictor). Es lo que hace que comparar el global contra los 7 baselines cueste 45 s en vez de 294 min. |
+| `comparacion.py` | **M2.5**: `cabeza_a_cabeza()` y `cabeza_a_cabeza_desagregado()` (el veredicto, con `peso_%`), `wape_por_serie()` y `distribucion_de_mejora()` — **en qué series** gana cada predictor, que es otra pregunta que "cuánto error tiene". |
 | `corrida.py` | `Corrida` + `identificar_corrida()` — trazabilidad: `id` = hash de configuración + huella de los datos. |
 | `reporte.py` | `construir_reporte()` (juego de tablas por horizonte × nivel × categoría) y `a_markdown()` (lo que se congela en `motor/backtests/`). |
 | `leakage.py` | `verificar_sin_leakage()` — **red innegociable** (M1.3) contra el leakage temporal de la deflación. Verifica una propiedad, no una implementación. |

@@ -90,7 +90,10 @@ def _preparar_checkpoint(directorio: Path, corrida: Corrida) -> None:
     )
 
 
-def _ruta_de_corte(directorio: Path, corte: pd.Timestamp) -> Path:
+def ruta_de_corte(directorio: Path, corte: pd.Timestamp) -> Path:
+    """Dónde vive el checkpoint de un corte. Pública porque `backtesting.checkpoints` lee
+    esos mismos archivos: dos definiciones del layout serían dos formas de nombrarlo, y la
+    segunda no encontraría nada sin fallar (devolvería "no hay checkpoints")."""
     return directorio / f"corte_{corte:%Y-%m}.parquet"
 
 
@@ -194,7 +197,7 @@ def ejecutar_backtest(
 
     reportes = []
     for corte in cortes:
-        ruta_corte = _ruta_de_corte(checkpoint, corte) if checkpoint is not None else None
+        ruta_corte = ruta_de_corte(checkpoint, corte) if checkpoint is not None else None
         if ruta_corte is not None and ruta_corte.exists():
             reportes.append(pd.read_parquet(ruta_corte))
             continue
