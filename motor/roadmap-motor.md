@@ -1315,6 +1315,150 @@ futura entre predictores, no solo para esta.
 real, con el reparto por serie. **Cumplido.** **367 tests**, `ruff` limpio, **13/13
 mutaciones caen**.
 
+### 6.8 Evaluación de cierre de M2 (2026-08-06)
+
+M2 está completo: las cinco unidades cerradas con evidencia ejecutada y el gate cumplido
+(§6.7, ADR-017). Esta sección es la evaluación de la fase, no un resumen — dice **cuánto
+compró de verdad**, qué costó, qué se aprendió que sobrevive a M2, y dónde está la palanca
+que queda sin usar. Se escribe ahora y no en M3 porque el número que importa se lee una sola
+vez: **la comparación contra el piso deja de ser posible en cuanto el motor promueva un
+modelo.**
+
+#### 1. Lo que compró, medido en lo promocionable y no en el titular
+
+El titular de M2.3 —"el global le gana al piso en 11 de 12 celdas"— es cierto y **no es lo
+que se entrega**, porque el global solo no resultó promocionable. Lo que se entrega es el
+champion. La diferencia es grande:
+
+| | h=1 | h=3 | h=6 | h=12 |
+|---|---|---|---|---|
+| ganancia del **champion** sobre el piso (grano producto) | **2,26%** | **2,64%** | **1,82%** | **1,49%** |
+| ganancia que mostraba el **global solo** | 10,66% | 8,79% | 4,17% | −1,27% |
+| ganancia del champion a nivel **total** | 9,72% | 6,93% | 7,45% | −1,57% |
+
+**M2 compró entre 1,5% y 2,6% de WAPE a grano producto, sobre siete baselines clásicos.**
+Ese es el número honesto de la fase, y conviene decirlo así antes de que circule el 10,66%.
+A nivel total la ganancia es mayor (7–10%) porque los errores por producto se cancelan al
+agregar, pero el producto sugiere órdenes **por producto**: el grano que manda es el primero.
+
+**No es un mal resultado, es un resultado caro.** El piso ya era fuerte —siete candidatos
+compitiendo con selección prospectiva y cascada— y ganarle 2% con un modelo global,
+features de precio y deflación es consistente con lo que la literatura de M0 anticipaba
+para series de este tipo. Lo que sí obliga es a no vender M2 como un salto.
+
+#### 2. Lo que costó
+
+En cómputo, M2 es barata; lo caro fue el piso de M1:
+
+| unidad | costo medido |
+|---|---|
+| M2.1 deflación | 2,1 s sobre 137.399 filas |
+| M2.2 features | 2,5 s sobre 116k filas |
+| M2.3 modelo global | ~4 min las 18 cortes |
+| M2.4 intervalos | 19,4 min (48 ajustes por corte) |
+| M2.5 champion | **45 s**, cero modelos reajustados |
+| *(referencia: el piso de M1)* | *294 min* |
+
+La decisión de M1.7a —checkpointing reanudable— es la que hace que M2.5 cueste 45 segundos y
+que M1.9 costara 12. **Se pagó dos veces y devolvió cuatro.** El corolario para M3: ninguna
+corrida larga sin `--checkpoint-dir`, y los checkpoints no se borran hasta cerrar el análisis
+que dependa de ellos.
+
+#### 3. Las siete decisiones que M2 dejó registradas
+
+ADR-011 (IPC empaquetado, *Propuesta*), **ADR-013** (la mitad de las features de precio eran
+identidades algebraicas), ADR-014 (clima: comprometido en el Acta, no modelado — y el dato
+del MVP es mock por contrato), ADR-015 (compromiso de precisión por horizonte, *Propuesta*,
+con dos revisiones pendientes), **ADR-017** (lo promocionable es el champion). Más dos que son
+de M1 pero se ejecutaron dentro de la ventana de M2 y sin las cuales M2 habría medido mal:
+ADR-012 (universo) y **ADR-016** (selección prospectiva).
+
+**Tres de esas siete se abrieron porque un número no cerraba, no porque estuvieran
+planificadas.** Es el patrón de la fase: el plan describía qué construir y la medición
+decidió qué de eso servía.
+
+#### 4. Lo que se aprendió y sobrevive a M2
+
+- **Un promedio esconde de qué está hecho, y pasó dos veces en dos unidades seguidas.** M2.4:
+  el intervalo calibra en agregado (0,80) porque `suave` es la mayoría, mientras `erratica`
+  sub-cubre 12 puntos. M2.5: el WAPE agregado es 86% `suave`, y ahí el global escondía errores
+  de 2 a 3x en el 31% de los productos. **Ninguna decisión del motor se toma con un agregado
+  solo**; va con su desagregado y con la columna de peso.
+- **Una identidad algebraica se disfraza de feature** (ADR-013). `precio_prom × deflactor =
+  ancla` en el 99,15% de las filas: a grano producto el monto deflactado *es* el target
+  reescalado. Antes de gastar una feature, verificar que no sea el target con otro nombre.
+- **El sintético no responde preguntas de negocio.** La ablación de precio da el signo opuesto
+  ahí, y no es contradicción: `demanda.py` no mira el precio, así que esas features son ruido
+  exacto. El sintético prueba que el pipeline corre; el número sale de datos reales.
+- **Un fixture mal armado no falla: confirma.** Dos de M2.2 pasaban en verde sin probar nada, y
+  uno de M2.5 (el del signo del sesgo) también. Los tres los cazó la mutación. **Un test que no
+  cae con el bug puesto es decoración**, y la única forma de saberlo es romper el código a
+  propósito.
+- **Una tabla congelada sobre el sintético caduca cuando cambia el generador** (§6.4). Las de
+  datos reales no. El `id` de corrida lo detecta, pero solo si alguien lo mira.
+- **No predecir puntúa perfecto.** Una serie sin predicción da WAPE 0,0 y solo `cobertura` lo
+  delata (§6.7). Cualquier comparación entre predictores tiene que exigir cobertura igual, no
+  "métrica definida".
+
+#### 5. La palanca que queda sin usar, y es la más grande de M3
+
+El champion elige por `(serie, corte)`: ~2.100 decisiones por corte, cada una con poca
+evidencia. Eso tiene un costo medible en varianza de selección — en `suave`, el champion es
+**peor que el global solo** (0,2954 contra 0,2654 a h=1). La alternativa natural es elegir con
+menos grados de libertad: **por `(cuadrante, corte)`**, que son 4 decisiones en vez de 2.100 y
+usa la estructura que las tablas de M2.4 y M2.5 muestran que existe.
+
+Estimación de la cota, **calculada con hindsight** (tomando el mejor de los tres por cuadrante
+de la tabla final) y por lo tanto **no un resultado sino un techo**:
+
+| h | champion (medido) | mejor por cuadrante (cota) | lo que el champion deja |
+|---|---|---|---|
+| 1 | 0,3230 | 0,2951 | **8,66%** |
+| 3 | 0,3667 | 0,3377 | **7,91%** |
+| 6 | 0,3928 | 0,3738 | 4,85% |
+| 12 | 0,3644 | 0,3561 | 2,27% |
+
+Y quién gana cada cuadrante también es informativo: **`suave` siempre el global; los tres
+cuadrantes irregulares casi siempre el P50** (piso en `intermitente`/`lumpy` a h=12). O sea que
+la estructura no es "un modelo mejor" sino "dos regímenes distintos": series suaves donde la
+media condicional del global es el estimador correcto, y series a ráfagas donde lo es la
+mediana. ADR-017 punto 3 lo anota: el P50 es en `intermitente`/`lumpy` **más preciso y menos
+sesgado** que las otras dos opciones.
+
+**Ojo con leer esto como "M1.7 se equivocó".** M1.7 midió que **enrutar por cuadrante con una
+regla fija** (intermitentes → Croston/TSB, por teoría) era peor que dejar competir libre — y
+sigue siendo cierto: `CrostonSBA` gana más en `suave` que en `lumpy`. Lo de acá es distinto:
+**seleccionar por cuadrante con el error observado**, que es una selección aprendida y más
+gruesa, no un ruteo teórico. Antes de adoptarlo hay que medirlo con regla prospectiva
+(ADR-016), porque la cota de arriba está calculada mirando el final.
+
+#### 6. Lo que M2 deja abierto
+
+- **Tres decisiones para el PM/Analista, y son la misma** (`planning/roadmap.md`): sesgo por
+  horizonte (ADR-015 con su evidencia corregida), cobertura del intervalo por cuadrante
+  (M2.4), y precisión del punto por cuadrante (M2.5). Las tres dicen que **un número único de
+  precisión no describe lo que el usuario va a ver**. Conviene resolverlas juntas.
+- **ADR-011 (IPC) sigue en `Propuesta`** y es la única dependencia externa del motor.
+- **El peldaño laboratorio de la deflación lo usa 1 producto de 2.128**: los datos reales no lo
+  ejercitan (§6.2).
+- **`CLIENTE_FEATURE` diferida a M3.2**, y con ella la decisión de si el extract real se
+  extiende a cliente×producto o M3.2 se valida solo en sintético.
+- **12.700 filas que nadie cubre** — altas de catálogo. No se reparan con selección: son el
+  hueco donde M3 puede ganar con features de categoría/laboratorio, y es lo mismo que §5.6.1
+  ya había identificado.
+
+#### 7. Qué habría hecho distinto
+
+- **Congelar el piso antes de M2.3 estuvo bien; congelarlo con selección retrospectiva costó
+  dos correcciones.** ADR-016 lo arregló, pero el problema estaba escrito en §12.5 desde el
+  2026-07-29 como "decisión pendiente" y se ejecutó recién seis días después, con M2.3 ya
+  encima. **Una trampa conocida y no cerrada se cobra sola.**
+- **M2.4 midió la cobertura del intervalo solo por horizonte hasta que alguien pidió el
+  desagregado.** El hallazgo (la sub-cobertura de `erratica`) apareció por mirar de más, no
+  porque el gate lo pidiera. En M2.5 el desagregado por cuadrante fue parte del diseño desde el
+  principio, y por eso el resultado se vio antes de congelar nada. **El desagregado no es un
+  extra del reporte: es el reporte.**
+
 ## 7. M3 — Jerarquía, cliente y segmentos · S9–S12
 
 | # | Unidad de trabajo | Semana | Entregable / gate |
@@ -1378,7 +1522,8 @@ mutaciones caen**.
 | S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | ✅ **M2.1** 2026-07-31 (67 tests) · **M2.2** 2026-08-04 — `motor/src/motor/features/`, gate de M1.3 cubierto (`pytest -m innegociable`), **274 tests**, `ruff` limpio, **7/7 mutaciones caen**. Validada a escala real en 3 cortes (cobertura 0,9899 sobre filas con precio propio; 2,5 s / 116k filas). **Tres correcciones a la lista de features** en §6.3 → **ADR-013**: el precio deflactado a grano producto es el ancla (identidad, CV 0,0000) y `revenue_real` es el target reescalado, así que la señal pasa a ser el **precio relativo al nivel**; `mismo_mes_año_anterior` era `lag 12`; **`CLIENTE_FEATURE` se difiere a M3.2** porque el extract real no tiene cliente×producto |
 | S6 | M1 | **Selección prospectiva · re-congelado del piso** (cierra §12.5 — unidad agregada, ver §5.7) | M1.9 | ✅ **2026-08-05 — ADR-016**. `backtests/baselines-real-prospectivo-2026-08-05.md`, misma corrida `a79a9b23676b` reusando los checkpoints: **12 segundos**, cero modelos reajustados. El piso pasa a WAPE producto **0,331** (h=1, contra 0,287 retrospectivo) con cobertura h=12 **0,9104** (contra 0,8880), y lo que queda sin cubrir son **12.700 filas = exactamente las altas de catálogo de §5.6.1**. **Hallazgo que sale del alcance de la unidad:** el sub-pronóstico de horizonte largo era del criterio de selección, no de los baselines — el sesgo total cumple el ±5% en los cuatro horizontes, lo que obliga a revisar **ADR-015** antes de ratificarlo. **289 tests**, `ruff` limpio, gate `innegociable` cubierto, **9/9 mutaciones caen**. Detalle en §5.6.2 |
 | S7 | M2 | LightGBM global · cuantiles | M2.3–M2.4 | ✅ **M2.3 2026-08-06** — `modelado/modelo_global.py` + `scripts/ablaciones_global.py`. Corre dentro del arnés y su reporte es **mergeable fila a fila** con el del piso (305.309 filas, mismo `id` `a79a9b23676b`, **las mismas 12.700 sin cubrir**). Configuración elegida por medición: **`precio+crudo`** — las features de M2.2 valen 0,0233 de WAPE a h=12 (6% relativo) y `LocalStandardScaler` **empeora 32%** a ese horizonte. Le gana al piso en **11 de 12** celdas nivel×horizonte. **Bloqueante resuelto:** `lightgbm 4.7.0` crashea con `pyarrow` cargado → pin `<4.7` + test en subproceso. **307 tests**, `ruff` limpio. Detalle en §6.4 (cambio de plan) y §6.5. · ✅ **M2.4 2026-08-06** — `backtesting/intervalos.py` + `modelado/modelo_global.py(cuantiles=)` + `scripts/intervalos_global.py`; tabla en `backtests/intervalos-global-real-2026-08-06.md` (misma corrida, 19,4 min). Cobertura empírica del P10–P90 **0,7798 / 0,8199 / 0,8130 / 0,8085** contra el 0,80 nominal, **sin recalibrar**. **Pero el agregado cancela dos errores opuestos:** `suave` calibra perfecto y `erratica` **sub-cubre 12 puntos** en los cuatro horizontes, mientras `intermitente`/`lumpy` sobre-cubren con amplitudes de hasta 13x el real → **decisión para el PM sobre ADR-015** (§6.6). El intervalo se invierte en **1 fila de 105.890**, así que M4.1 no necesita reordenar. El WAPE del punto reproduce **exacto** el de M2.3. **329 tests**, `ruff` limpio, **9/9 mutaciones caen**. Detalle en §6.6 |
-| S8 | M2 | **Champion/challenger vs piso** | M2.5 | ✅ 2026-08-06 (§6.7, ADR-017) |
+| S8 | M2 | **Champion/challenger vs piso** | M2.5 | ✅ **2026-08-06 — ADR-017**. `backtesting/checkpoints.py` + `backtesting/comparacion.py` + `scripts/global_vs_baselines.py`; tabla en `backtests/global-vs-baselines-real-2026-08-06.md`. **45 s, cero modelos reajustados** (los checkpoints de las dos corridas comparten `id`). **Lo promocionable es el champion, no el global solo:** el global pierde a h=12 contra el piso (0,3746 vs 0,3699) y en `intermitente`/`lumpy` es **2 a 3x peor que el baseline** con sobre-pronóstico que crece con el horizonte (+511% en `lumpy` a h=12) — 31% de los productos, 0,6% del peso del WAPE. El champion gana los cuatro horizontes (**0,3230 / 0,3667 / 0,3928 / 0,3644**) con sesgo dentro del ±5%; los baselines se quedan con el **84%** de los pares. Cierra el P50 de §6.6: gana 3.512 turnos y mueve el WAPE 0,001, con sesgo −8,4%/−13,4% que viola ADR-008. **367 tests**, `ruff` limpio, **13/13 mutaciones caen**. Detalle en §6.7; **evaluación de la fase en §6.8** |
+| — | **M2** | **Cierre de fase** | — | ✅ **2026-08-06 — gate cumplido (§6.7).** Evaluación en **§6.8**: la ganancia sobre el piso, medida en lo promocionable, es **1,5% a 2,6%** a grano producto (no el 10,66% del titular de M2.3, que era el global solo). Siete ADRs registrados, tres de ellos abiertos porque un número no cerraba. **La palanca más grande que queda:** seleccionar por `(cuadrante, corte)` en vez de por `(serie, corte)` — cota estimada con hindsight, **4,9% a 8,7%** |
 | S9 | M3 | Reconciliación jerárquica | M3.1 | ⬜ |
 | S10–S11 | M3 | Propensión cliente×producto · RFM deflactado | M3.2–M3.3 | ⬜ |
 | S12 | M3 | Clientes nuevos · cierre de métricas por nivel | M3.4 | ⬜ |
