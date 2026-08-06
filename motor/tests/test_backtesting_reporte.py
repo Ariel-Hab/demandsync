@@ -241,3 +241,39 @@ def test_error_claro_si_no_hay_filas_en_los_horizontes_pedidos(datos):
 
     with pytest.raises(ValueError, match="no tiene ninguna fila en los horizontes"):
         construir_reporte(reporte, columna_pred="pred", horizontes=(99,))
+
+
+def test_las_tablas_de_intervalo_entran_solo_si_se_pasan_las_columnas_de_cuantil(datos):
+    """M2.4. El gate de la unidad es que la cobertura empírica quede **en la tabla
+    congelada**, junto al WAPE y con los mismos desagregados: una calibración que vive en un
+    script suelto no es un entregable congelable (regla 1 de `backtests/README.md`)."""
+    reporte = _correr(datos)
+    reporte["P10"] = reporte["pred"] * 0.5
+    reporte["P90"] = reporte["pred"] * 1.5
+
+    sin_cuantiles = construir_reporte(reporte, columna_pred="pred")
+    assert not any(clave.startswith("intervalos") for clave in sin_cuantiles)
+
+    con_cuantiles = construir_reporte(
+        reporte, columna_pred="pred", columnas_cuantil={0.1: "P10", 0.9: "P90"}
+    )
+    assert list(con_cuantiles["intervalos_por_horizonte"]["horizonte"]) == [1, 3, 6, 12]
+    assert "pinball_por_horizonte" in con_cuantiles
+
+
+def test_la_tabla_de_intervalos_va_al_markdown_con_su_titulo(datos):
+    """Sin entrada en `orden`, `a_markdown` la renderiza igual pero al final y con la clave
+    cruda de encabezado. El 0,80 nominal va en el título a propósito: es contra lo que se lee
+    el número y en la tabla solo está el desvío."""
+    reporte = _correr(datos)
+    reporte["P10"] = reporte["pred"] * 0.5
+    reporte["P90"] = reporte["pred"] * 1.5
+
+    tablas = construir_reporte(
+        reporte, columna_pred="pred", columnas_cuantil={0.1: "P10", 0.9: "P90"}
+    )
+    md = a_markdown(tablas, titulo="Intervalos")
+
+    assert "## Calibración del intervalo P10–P90 por horizonte (M2.4) — nominal **0,80**" in md
+    assert "cobertura_empirica" in md
+    assert "desvio_vs_nominal" in md

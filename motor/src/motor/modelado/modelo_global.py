@@ -1,4 +1,5 @@
-"""Modelo global LightGBM con `mlforecast` (M2.3) — multi-horizonte **directo**.
+"""Modelo global LightGBM con `mlforecast` (M2.3) — multi-horizonte **directo**, con
+intervalos por regresión cuantílica (M2.4).
 
 Global (`plan-diseno.md` decisión 2): **un solo modelo para todas las series**, que aprende
 de todo el catálogo a la vez (cross-learning) en vez de ajustar uno por producto. Es lo que
@@ -50,6 +51,8 @@ predicción tiene que llevar el del corte, no el de `corte+1`. Lo fija
 de `mlforecast` que mueva ese índice desalinea el modelo **sin fallar**.
 """
 
+from collections.abc import Sequence
+
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
@@ -81,6 +84,44 @@ arnés y sea comparable con el piso, no que gane (eso es M2.5). Tunear con el re
 vista es elegir la vara según el resultado — el mismo argumento por el que ADR-015 se decidió
 antes de M2.3. Si M2.5 muestra que vale la pena, el tuning entra como unidad propia con su
 gate."""
+
+CUANTILES_ESTANDAR = (0.1, 0.5, 0.9)
+"""Los cuantiles de M2.4 (`plan-diseno.md` §M2). El **P10–P90** es el intervalo que ADR-015
+punto 2 convierte en el entregable del producto para h=6/h=12, y su cobertura nominal es del
+**80%**: la empírica es lo que mide `motor.backtesting.intervalos`."""
+
+
+def nombre_de_cuantil(cuantil: float) -> str:
+    """`0.1` → `GlobalLGBM_P10`. Una sola función para que el nombre de columna no se
+    escriba a mano en el predictor, en las métricas y en el script — tres lugares donde un
+    typo no falla, solo deja la tabla sin la columna que se creía estar midiendo."""
+    return f"{NOMBRE_MODELO}_P{round(cuantil * 100):02d}"
+
+
+def _armar_modelos(
+    cuantiles: Sequence[float] | None, hiperparametros: dict
+) -> dict[str, lgb.LGBMRegressor]:
+    """El modelo de media más un modelo por cuantil, todos con las mismas features.
+
+    **La columna de media (`GlobalLGBM`) no cambia por agregar cuantiles**, y eso es
+    condición de la unidad: es el pronóstico puntual que M2.3 midió contra el piso y con el
+    que M2.5 va a comparar. Los cuantiles se suman al mismo `MLForecast`, que ajusta cada
+    modelo por separado sobre la misma matriz — lo fija
+    `test_los_cuantiles_no_mueven_el_pronostico_puntual`.
+
+    Cada cuantil es un LightGBM con **pinball loss** (`objective="quantile"`), que es
+    asimétrica: con `alpha=0.9` quedarse corto cuesta 9 veces más que pasarse, así que el
+    modelo se acomoda en el nivel que la demanda solo supera 1 de cada 10 veces. No es un
+    post-proceso del punto: son modelos distintos con la misma entrada.
+    """
+    modelos = {NOMBRE_MODELO: lgb.LGBMRegressor(**hiperparametros)}
+    for cuantil in cuantiles or ():
+        if not 0.0 < cuantil < 1.0:
+            raise ValueError(f"cuantil fuera de (0, 1): {cuantil}")
+        modelos[nombre_de_cuantil(cuantil)] = lgb.LGBMRegressor(
+            objective="quantile", alpha=cuantil, **hiperparametros
+        )
+    return modelos
 
 COLUMNAS_DINAMICAS = list(COLUMNAS_PRECIO)
 """**Todas** las features de precio viajan por `X_df`, incluida `precio_ancla`.
@@ -195,6 +236,7 @@ def predecir_global(
     usar_precio: bool = True,
     escalar_target: bool = False,
     hiperparametros: dict | None = None,
+    cuantiles: Sequence[float] | None = None,
     columna_id: str = "id_producto",
     columna_fecha: str = "anio_mes",
     columna_objetivo: str = "unidades",
@@ -215,9 +257,14 @@ def predecir_global(
         escalar_target: `LocalStandardScaler` de `mlforecast`. Las escalas por producto van
             de jeringas a vacunas y el modelo es uno solo, así que sin escalar las series
             grandes dominan el ajuste. Cuál conviene **se mide**, no se supone.
+        cuantiles: M2.4. Con `CUANTILES_ESTANDAR` agrega `GlobalLGBM_P10/_P50/_P90` sin
+            tocar la columna de media. Cuesta un ajuste por cuantil **y por horizonte**
+            (con `max_horizon=12`, tres cuantiles son 36 modelos más), así que se pide
+            explícitamente y no viene por defecto.
 
     Returns:
         `columna_id`, `columna_fecha` y la columna `GlobalLGBM`, para `corte+1..corte+h`.
+        Más una columna por cuantil pedido.
     """
     catalogo = (auxiliares or {}).get("catalogo")
     corte = pd.Timestamp(corte).normalize().replace(day=1)
@@ -239,9 +286,9 @@ def predecir_global(
         historia, corte, catalogo, usar_precio, columna_id, columna_fecha, columna_objetivo
     )
 
-    modelo = lgb.LGBMRegressor(**(hiperparametros or HIPERPARAMETROS))
+    modelos = _armar_modelos(cuantiles, hiperparametros or HIPERPARAMETROS)
     fcst = MLForecast(
-        models={NOMBRE_MODELO: modelo},
+        models=modelos,
         freq="MS",
         lags=LAGS,
         lag_transforms=LAG_TRANSFORMS,
@@ -265,7 +312,13 @@ def predecir_global(
     # El target son unidades (ADR-007) y una demanda negativa no existe. LightGBM no lo
     # sabe: extrapola libre y una serie en descenso puede dar negativo. Se recorta en 0,
     # igual que hacen `CrostonSBA`/`TSB` por construcción (M1.6).
-    predicciones[NOMBRE_MODELO] = predicciones[NOMBRE_MODELO].clip(lower=0.0)
+    #
+    # Vale para los cuantiles con más razón que para la media: con 42% de series
+    # intermitentes, el P10 de un producto que suele no venderse **es** 0, y ese cero es una
+    # respuesta legítima ("bien puede no venderse nada"), no un faltante. Por eso el
+    # intervalo se evalúa cerrado en `motor.backtesting.intervalos`.
+    for columna in modelos:
+        predicciones[columna] = predicciones[columna].clip(lower=0.0)
     return predicciones
 
 

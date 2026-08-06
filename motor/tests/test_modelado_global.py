@@ -20,10 +20,12 @@ import pytest
 from motor.backtesting.arnes import ejecutar_backtest
 from motor.backtesting.leakage import verificar_sin_leakage
 from motor.modelado.modelo_global import (
+    CUANTILES_ESTANDAR,
     NOMBRE_MODELO,
     _armar_entrenamiento,
     _armar_x_df,
     cobertura_esperada,
+    nombre_de_cuantil,
     predecir_global,
 )
 
@@ -349,6 +351,92 @@ def test_un_producto_sin_ancla_no_tira_abajo_la_corrida():
 
     assert pred["id_producto"].nunique() == 6
     assert pred[NOMBRE_MODELO].notna().all()
+
+
+# --------------------------------------------------------------------------------------
+# 4. Cuantiles (M2.4)
+# --------------------------------------------------------------------------------------
+
+
+def test_los_cuantiles_no_mueven_el_pronostico_puntual():
+    """**Condición de la unidad, no una prolijidad.** `GlobalLGBM` es el pronóstico puntual
+    que M2.3 midió contra el piso (WAPE 0,2953 a h=1) y con el que M2.5 va a comparar. Si
+    agregar los cuantiles lo moviera aunque sea un poco, ese número dejaría de ser el medido
+    y habría que re-correr M2.3 — sin que nada avisara.
+
+    `MLForecast` ajusta cada modelo por separado sobre la misma matriz de features, así que
+    la igualdad tiene que ser **exacta**, no aproximada. Se pide con hiperparámetros
+    determinísticos por la misma razón que el test de leakage.
+    """
+    historia = _historia(n_productos=6, n_meses=40)
+    corte = historia["anio_mes"].max()
+
+    solo_punto = _predecir(historia, corte, h=6)
+    con_cuantiles = _predecir(historia, corte, h=6, cuantiles=CUANTILES_ESTANDAR)
+
+    pd.testing.assert_series_equal(
+        solo_punto[NOMBRE_MODELO], con_cuantiles[NOMBRE_MODELO], check_exact=True
+    )
+
+
+def test_devuelve_una_columna_por_cuantil_y_ninguna_negativa():
+    historia = _historia(n_productos=6, n_meses=40)
+    corte = historia["anio_mes"].max()
+
+    pred = _predecir(historia, corte, h=6, cuantiles=CUANTILES_ESTANDAR)
+
+    esperadas = {nombre_de_cuantil(q) for q in CUANTILES_ESTANDAR}
+    assert esperadas <= set(pred.columns)
+    assert set(pred.columns) == {"id_producto", "anio_mes", NOMBRE_MODELO} | esperadas
+    for columna in esperadas:
+        assert (pred[columna] >= 0).all(), f"{columna} predice demanda negativa"
+
+
+def test_el_p90_queda_por_encima_del_p10_en_una_serie_con_ruido():
+    """No es una identidad —los tres modelos se ajustan independientes y **pueden**
+    cruzarse, por eso existe `tasa_de_cruce`— pero sobre una serie con varianza real el
+    orden tiene que darse. Si no se diera, el `alpha` estaría mal cableado y el intervalo
+    saldría invertido: seguiría "cubriendo" en las tablas y no significaría nada.
+    """
+    historia = _historia(n_productos=6, n_meses=48)
+    corte = historia["anio_mes"].max()
+
+    pred = _predecir(historia, corte, h=6, cuantiles=CUANTILES_ESTANDAR)
+
+    p10, p90 = pred[nombre_de_cuantil(0.1)], pred[nombre_de_cuantil(0.9)]
+    assert (p90 >= p10).all()
+    assert (p90 > p10).any(), "el intervalo es de ancho cero: no hay nada que calibrar"
+
+
+def test_un_cuantil_fuera_de_rango_corta():
+    """`alpha` fuera de (0,1) no es un cuantil. LightGBM lo acepta y entrena cualquier cosa,
+    así que la guarda va acá."""
+    historia = _historia(n_productos=4, n_meses=30)
+    corte = historia["anio_mes"].max()
+
+    with pytest.raises(ValueError, match="cuantil"):
+        _predecir(historia, corte, h=3, cuantiles=(0.1, 1.5))
+
+
+@pytest.mark.innegociable
+def test_los_cuantiles_tampoco_miran_el_futuro():
+    """La red de M1.3 sobre las columnas nuevas.
+
+    Superficie nueva es superficie sin cubrir: el `X_df` de M2.3 ya está fijado, pero nada
+    garantiza que los modelos de cuantil reciban el mismo trato si alguien toca
+    `_armar_modelos`. Un P90 que viera el futuro daría una cobertura empírica espectacular —
+    justo el número del gate de esta unidad.
+    """
+    historia = _historia(n_productos=5, n_meses=36)
+    cortes = [pd.Timestamp("2023-01-01"), pd.Timestamp("2023-06-01")]
+
+    verificar_sin_leakage(
+        lambda datos, corte: _predecir(
+            datos, corte, h=3, cuantiles=CUANTILES_ESTANDAR
+        ).sort_values(["id_producto", "anio_mes"])[nombre_de_cuantil(0.9)],
+        historia,
+        cortes,
+    )
 
 
 def test_cobertura_esperada_avisa_cuando_las_series_son_cortas():

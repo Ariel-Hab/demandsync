@@ -26,6 +26,7 @@ es la referencia rápida de **cómo usar el código**, no repite el diseño.
 | `cortes.py` | `generar_cortes(fechas, n_cortes)` — los puntos de corte rolling-origin, sobre el **calendario**. Sin shuffle, sin k-fold. |
 | `arnes.py` | `ejecutar_backtest(datos, predecir, ...)` — el punto de entrada único. Densifica, orquesta cortes y llama a un predictor pluggable. Con `directorio_checkpoint` la corrida es reanudable (M1.7a). |
 | `metricas.py` | `wape()`, `sesgo()` (implementación propia) y `mase()` (wrapper de `utilsforecast`; densifica su `train_df`). |
+| `intervalos.py` | **M2.4**: `cobertura_empirica()`, `pinball()` y `tasa_de_cruce()` — la calibración del P10–P90, que ADR-015 punto 2 convierte en el compromiso del producto para h=6/h=12. |
 | `corrida.py` | `Corrida` + `identificar_corrida()` — trazabilidad: `id` = hash de configuración + huella de los datos. |
 | `reporte.py` | `construir_reporte()` (juego de tablas por horizonte × nivel × categoría) y `a_markdown()` (lo que se congela en `motor/backtests/`). |
 | `leakage.py` | `verificar_sin_leakage()` — **red innegociable** (M1.3) contra el leakage temporal de la deflación. Verifica una propiedad, no una implementación. |

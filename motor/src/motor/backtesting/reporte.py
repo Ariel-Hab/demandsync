@@ -14,6 +14,7 @@ agregadas, nunca registros — regla de oro de datos del cliente (ADR-006).
 import pandas as pd
 
 from .corrida import Corrida
+from .intervalos import construir_tablas_de_intervalos
 from .metricas import mase, sesgo, wape
 
 HORIZONTES_DE_REPORTE = (1, 3, 6, 12)
@@ -45,6 +46,7 @@ def construir_reporte(
     columna_categoria: str = "categoria",
     columna_cuadrante: str = "cuadrante",
     horizontes: tuple[int, ...] = HORIZONTES_DE_REPORTE,
+    columnas_cuantil: dict[float, str] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Arma el juego de tablas del backtest a partir del reporte de `ejecutar_backtest`.
 
@@ -59,6 +61,10 @@ def construir_reporte(
       `motor.clasificacion.etiquetar()`. Si falta, la tabla no aparece y su ausencia queda
       escrita en el markdown en vez de pasar desapercibida.
     - `mase_por_horizonte`: solo si se pasa `train_df` (MASE necesita la historia).
+    - `intervalos_*` y `pinball_por_horizonte`: solo si se pasa `columnas_cuantil` (M2.4),
+      el mapa cuantil → columna que devuelve `predecir_global(cuantiles=...)`. La cobertura
+      empírica del P10–P90 es el gate de esa unidad y el compromiso del producto en
+      h=6/h=12 (ADR-015 punto 2), así que va en la misma tabla congelada que el WAPE.
 
     No calcula MAPE: ADR-008 lo deja solo para comunicación en niveles agregados, y
     esta tabla es la de evaluación interna.
@@ -94,6 +100,17 @@ def construir_reporte(
             tablas[nombre] = _metricas_juntas(
                 del_horizonte, [columna, "horizonte"], columna_pred, None
             )
+
+    if columnas_cuantil:
+        tablas.update(
+            construir_tablas_de_intervalos(
+                reporte,
+                columnas_cuantil,
+                horizontes=horizontes,
+                columna_categoria=columna_categoria,
+                columna_cuadrante=columna_cuadrante,
+            )
+        )
 
     if train_df is not None:
         por_serie = mase(reporte, modelos=[columna_pred], train_df=train_df)
@@ -171,6 +188,13 @@ def a_markdown(tablas: dict[str, pd.DataFrame], titulo: str, notas: str = "") ->
         ("por_categoria", "Por categoría y horizonte"),
         ("por_cuadrante", "Por cuadrante de intermitencia y horizonte"),
         ("mase_por_horizonte", "MASE por horizonte"),
+        (
+            "intervalos_por_horizonte",
+            "Calibración del intervalo P10–P90 por horizonte (M2.4) — nominal **0,80**",
+        ),
+        ("pinball_por_horizonte", "Pérdida pinball por cuantil y horizonte (normalizada)"),
+        ("intervalos_por_cuadrante", "Calibración del intervalo por cuadrante y horizonte"),
+        ("intervalos_por_categoria", "Calibración del intervalo por categoría y horizonte"),
         ("origen_de_la_prediccion", "Origen de cada predicción (ganador / cascada / nadie)"),
         ("estabilidad_de_la_seleccion", "Cambios de ganador por serie a lo largo de los cortes"),
     ]

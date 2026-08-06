@@ -675,7 +675,7 @@ congelada, no que se haya congelado con un criterio en particular. Lo que M1.9 c
 | **M2.1** | **Transformador de deflación (ADR-002)**: ancla por producto + índices de nivel (media geométrica ponderada) + fallback categoría → laboratorio → IPC + clamp de ratios. Los casos CP-INF-01..05 se escriben como tests unitarios del transformador | S5 | Componente reutilizable + tests CP-INF-*; el fallback se testea con la misma prioridad que el ancla directa (lo necesita el 25,4% de los productos — EDA §4); **test propio del precio implícito no utilizable** — 4.848 filas reales NaN por `unidades == 0` y 22 con precio ≤ 0 por signos cruzados (§5.5 #6). **CERRADA** ✅ 2026-07-31 — `motor.deflacion`, 67 tests, cobertura de ancla 73,2% contra el 74,6% del EDA §4 (§6.1, §6.2) |
 | **M2.2** | Features: lags (1,2,3,6,12), rolling means (3,6,12), mes del año, categoría/laboratorio, escala de precio (ancla) y **precio relativo al nivel** con su variación. *(Tres correcciones a la lista original, medidas: ver §6.3 y ADR-013)* | S5–S6 | **✅ CERRADA 2026-08-04** — `motor/src/motor/features/`: `especificacion.py` (lo que ejecuta `mlforecast`) + `precio.py` + `construccion.py`. Pasa la red de M1.3 (`pytest -m innegociable`). **274 tests**, `ruff` limpio; las **7 mutaciones caen**. Validado a escala real en 3 cortes: cobertura 0,9899 sobre filas con precio propio, CV intra-producto 0,1511, **2,5 s** sobre 116k filas |
 | **M2.3** | LightGBM global con `mlforecast`, **multi-horizonte directo** (`max_horizon=12`: un modelo por horizonte) | S6–S7 | Corre dentro del arnés, comparable 1:1 con el piso. **✅ 2026-08-06** — ver §6.5. Se cumple en sentido literal: los dos reportes se mergean fila a fila y las filas sin cubrir son las mismas |
-| **M2.4** | Intervalos: quantile regression P10/P50/P90 | S7 | Cobertura empírica de los intervalos reportada (¿el P10–P90 cubre ~80%?) |
+| **M2.4** | Intervalos: quantile regression P10/P50/P90 | S7 | Cobertura empírica de los intervalos reportada (¿el P10–P90 cubre ~80%?). **✅ CERRADA 2026-08-06** — `backtests/intervalos-global-real-2026-08-06.md`: **0,7798 / 0,8199 / 0,8130 / 0,8085** contra el 0,80 nominal. Ver §6.6 |
 | **M2.5** | **Champion/challenger por serie** + reporte comparativo contra el piso congelado, sobre sintético **y** real | S8 | `motor/backtests/global-vs-baselines-<fecha>.md` |
 
 **Gate de salida de M2** (= puntos 2–4 de la Definición de listo de `plan-diseno.md`), **precisado por horizonte en ADR-015 (2026-08-05)** porque el piso real incumple el ±5% en h=6/h=12 (§5.6.1):
@@ -1074,16 +1074,142 @@ limpio, red de M1.3 sobre `predecir_global` cubierta, **8/8 mutaciones caen**.
   era un no-op: sacaba el `usar_precio` de un filtro que igual no encontraba las columnas.
   El selector estaba mal, no el test. Conviene mirar la mutación antes de tocar el test.
 
+### 6.6 M2.4 cerrada — el intervalo P10–P90 calibra, y el promedio esconde por qué (2026-08-06)
+
+`backtests/intervalos-global-real-2026-08-06.md`, corrida `a79a9b23676b` — **el mismo `id`
+que el piso y que las ablaciones**, porque el hash no incluye el predictor. 2.128 productos ×
+18 cortes × h=12, **19,4 min**, 305.309 filas.
+
+**De dónde partía la unidad.** M2.3 dejó el global produciendo **un solo número por celda**.
+A h=6 el WAPE a grano producto es 0,3834 y a h=12 0,3746: presentar eso como precisión es
+prometer lo que no hay, y **ADR-015 punto 2 ya había decidido que en esos horizontes el
+entregable del producto es el intervalo P10–P90 calibrado** (y su punto 4 lo puso como
+reemplazo del badge de MAPE de CU-03, que ADR-008 dejó sin dueño). O sea que había un
+compromiso escrito con el usuario y el motor **no producía el objeto que lo cumple**.
+
+**El número del gate — cobertura empírica contra el 0,80 nominal:**
+
+| horizonte | cobertura | desvío | amplitud relativa | WAPE del punto |
+|---|---|---|---|---|
+| 1 | 0,7798 | −0,0202 | 0,8197 | 0,2953 |
+| 3 | 0,8199 | +0,0199 | 1,1111 | 0,3435 |
+| 6 | 0,8130 | +0,0130 | 1,2046 | 0,3834 |
+| 12 | 0,8085 | +0,0085 | 1,2655 | 0,3746 |
+
+**1. Calibra sin recalibrar, y el desvío máximo es de 2 puntos.** No se tuneó nada para
+llegar acá: son los mismos hiperparámetros sin tunear de M2.3 con `objective="quantile"`.
+Conviene decirlo explícito porque la tentación estaba: ajustar hasta pegarle al 80% habría
+sido elegir la vara viendo el resultado, y el gate pedía **reportar** la cobertura, no
+alcanzarla. La `amplitud_relativa` usa el mismo denominador que el WAPE (`Σ|real|`) para que
+las dos últimas columnas de esa tabla se lean juntas: el intervalo mide entre 0,8 y 1,3 veces
+la magnitud del propio real, o sea del orden de 3x el error del punto. Ancho, pero no
+absurdo — y ese contraste es el que impide que "cobertura 0,80" se lea como éxito cuando se
+consigue con un rango inútil.
+
+**2. El agregado calibra porque dos errores se cancelan, y esa es la lectura que importa.**
+
+| cuadrante | h=1 | h=3 | h=6 | h=12 | amplitud h=12 |
+|---|---|---|---|---|---|
+| `suave` (20.773 filas) | 0,7820 | 0,8010 | 0,8012 | 0,7990 | 1,19 |
+| `erratica` | **0,6790** | **0,6992** | **0,6771** | **0,6700** | 1,37 |
+| `intermitente` | 0,8572 | 0,9230 | 0,9111 | 0,9071 | **8,34** |
+| `lumpy` | 0,7089 | 0,8537 | 0,8370 | 0,8257 | **13,47** |
+
+`suave` —que es la mayoría de las filas— calibra casi perfecto en los cuatro horizontes. Lo
+que el promedio tapa son las otras tres: **`erratica` sub-cubre ~12 puntos de forma
+sistemática** (el intervalo promete menos riesgo del que hay, que es el error peligroso para
+un analista de compras) mientras `intermitente` y `lumpy` **sobre-cubren con intervalos de
+hasta 13 veces la magnitud del real** — honestos pero inservibles para decidir. Es
+exactamente el caso que la regla de M1.2 ("ningún número global suelto sin desagregar")
+existe para atrapar: con la tabla por horizonte sola, M2.4 se declaraba cerrada con un
+0,80 impecable y el problema quedaba invisible.
+
+**3. El cruce de cuantiles no es un problema, y ahora está medido.** Los tres modelos se
+ajustan independientes y nada les impone monotonía, así que había que saber cuán seguido se
+cruzan antes de decidir si reordenar. Sobre 105.890 filas completas: `P50 > P90` en 0,486%,
+`P10 > P50` en 0,112%, y **`P10 > P90` en 1 sola fila (0,0009%)** — o sea que el intervalo
+que se publica prácticamente nunca se invierte. Reordenar (Chernozhukov et al.) mueve la
+cobertura en la **cuarta decimal** (0,7798 → 0,7799). **Consecuencia para M4.1:** se puede
+escribir `limite_inferior/superior` sin paso de reordenamiento; alcanza con una guarda de una
+línea para esa fila entre cien mil, y ya se sabe que no cambia ningún número.
+
+**4. El P50 le gana a la media como pronóstico puntual, pero solo a h=12 — y es justo la
+celda que M2.3 perdía.**
+
+| | h=1 | h=3 | h=6 | h=12 |
+|---|---|---|---|---|
+| media (el punto de M2.3) | **0,2953** | **0,3435** | **0,3834** | 0,3746 |
+| P50 | 0,3055 | 0,3529 | 0,3868 | **0,3627** |
+
+El piso prospectivo da 0,3699 a h=12 producto: la media pierde por +0,0047 (la **única** de
+las 12 celdas que M2.3 no ganaba, §6.5) y **el P50 le ganaría por −0,0072**. Tiene sentido —
+a 12 meses la distribución está muy sesgada y la media se corre con la cola. **No se cambia
+nada acá:** elegir el estimador por horizonte mirando esta tabla es hindsight, el mismo
+problema que ADR-016 cerró para la selección de baselines. Entra a **M2.5 como candidato**, y
+si se adopta tiene que ser con la regla prospectiva (por corte, con lo ya observado).
+
+**5. El control cruzado que valida toda la corrida.** El WAPE del pronóstico puntual
+reproduce **exacto** el de las ablaciones de M2.3 —0,2953 / 0,3435 / 0,3834 / 0,3746 a grano
+producto, y todas las celdas de categoría y total dígito a dígito— porque los cuantiles se
+suman al mismo `MLForecast` sin tocar el modelo de media. Es lo que garantiza que M2.4 no
+movió el número con el que M2.5 va a comparar, y está fijado además por un test de igualdad
+exacta (`test_los_cuantiles_no_mueven_el_pronostico_puntual`).
+
+**Costo:** 94 s por corte contra 21,6 s del punto solo (4,3x, consistente con 4x los
+modelos: `max_horizon=12` × 4 estimadores = 48 ajustes por corte). **Directorio de
+checkpoints propio, obligatorio:** el `id` de corrida no incluye el predictor, así que esta
+corrida comparte `id` con las ablaciones de M2.3 y habría "reanudado" sus checkpoints —que no
+tienen columnas de cuantil— sin avisar.
+
+**Gate de salida de M2.4:** cobertura empírica del P10–P90 reportada, desagregada por
+horizonte, cuadrante y categoría, en tabla congelada con `id` de corrida. **Cumplido.**
+**329 tests**, `ruff` limpio, red de M1.3 extendida a los cuantiles, **9/9 mutaciones caen**.
+
+#### Lo que esto le deja al PM y al Analista, y no lo decide el motor
+
+ADR-015 punto 2 fijó la cobertura del P10–P90 como **el** compromiso del producto en h=6/h=12
+— un número único. Los datos dicen que ese compromiso **no se cumple parejo**: se cumple en
+`suave`, se sobre-cumple caro en `intermitente`/`lumpy` y **no se cumple en `erratica`**,
+donde falta ~12 puntos en los cuatro horizontes. Hay que decidir si el compromiso se expresa
+por cuadrante, si se acota a los cuadrantes donde se cumple, o si la advertencia de varianza
+de CU-03 cambia según la serie. Se suma a que **ADR-015 ya venía pendiente de revisión** por
+la evidencia que le corrigió ADR-016. Registrado en `planning/roadmap.md`.
+
+#### Una nota de método que no es de esta unidad pero salió acá
+
+`Get-Process().CPU` (y `Win32_Process` por CIM) reportaron **~0 s de CPU y 11 MB** para el
+proceso de esta corrida mientras estaba entrenando LightGBM normalmente. Sobre esa lectura se
+diagnosticó un cuelgue que no existía y se bajó una corrida sana. **La señal de progreso de
+una corrida del arnés son los checkpoints en disco**, que además llevan la marca de tiempo del
+corte; el contador de CPU no sirve en esta máquina.
+
 ## 7. M3 — Jerarquía, cliente y segmentos · S9–S12
 
 | # | Unidad de trabajo | Semana | Entregable / gate |
 |---|---|---|---|
 | **M3.1** | Reconciliación total → categoría → laboratorio → producto con `hierarchicalforecast`; bottom-up vs MinT **elegido por backtest**, no por preferencia | S9 | Forecasts coherentes; ganancia por nivel documentada |
 | **M3.2** | Nivel cliente×producto: **P(compra en h)** (clasificación binaria LightGBM, mismas features) + tamaño esperado condicional. Es el output honesto: solo ~12% de los 319k pares tiene ≥12 meses de señal (EDA §5). **Recibe `CLIENTE_FEATURE`, diferida acá desde M2.2** (§6.3) | S10–S11 | Ranking de propensión; alimenta venta cruzada y redistribución (R3). **Dos precondiciones que hay que resolver acá y no antes:** (a) el **extract real no tiene cliente×producto** — o se extiende `extraer_snap.py` (túnel SSH, ~319k pares × 96 meses, mucho más pesado que lo de hoy) o M3.2 se valida solo en sintético, y eso se decide con el número de costo en la mano; (b) el generador **no modela altas ni bajas de cliente** (§12.1, deuda abierta de T0.4), así que hoy no ejercita el arranque en frío de un cliente nuevo — que es justo lo que pide M3.4 |
-| **M3.3** | Clustering RFM propio sobre montos **deflactados** (CP-INF-04), versionado por corrida; contraste contra la segmentación operacional DFV (CP-SEG-01) | S11 | Matriz de contingencia cluster × `segmento_operacional`; `cluster_id` **no** entra como feature (ADR-005) |
+| **M3.3** | Clustering RFM propio sobre montos **deflactados** (CP-INF-04), versionado por corrida; contraste contra la segmentación operacional DFV (CP-SEG-01); **etiquetado por arquetipos fijos** (ver diseño abajo) + **composición diagnóstica** por cluster | S11 | Matriz de contingencia cluster × `segmento_operacional`; `cluster_id` **no** entra como feature (ADR-005); cada cluster muestra etiqueta legible estable entre corridas y su top categoría/producto/laboratorio |
 | **M3.4** | Clientes nuevos (< 6 meses): prior del segmento operacional más cercano | S12 | Regla explícita y testeada |
 
 **Decisión pendiente que hay que registrar en M3.2:** WAPE/MASE/sesgo (ADR-008) son métricas de error de forecast y **no aplican a un modelo de propensión**. Antes de cerrar M3.2 hay que fijar sus métricas (PR-AUC, lift@k, calibración) y registrarlas como ADR nuevo — ADR-008 no las cubre y dejarlo implícito es exactamente el vacío que ADR-008 vino a cerrar.
+
+#### Diseño pendiente de M3.3: etiquetado estable + composición diagnóstica (2026-08-06)
+
+**El problema que resuelve.** `cluster_id` es un número interno, arbitrario y **distinto cada corrida** (ADR-005) — necesario para que nunca sea feature, pero inutilizable tal cual para un operador que espera ver siempre los mismos nombres de segmento. Encadenar cada corrida contra la anterior (buscar a qué cluster de esta corrida se "parece más" el de la corrida pasada) no alcanza: la etiqueta deriva de a poco mes a mes sin que nadie lo decida, y depende de guardar el historial de la corrida previa.
+
+**Diseño propuesto — arquetipos fijos, no encadenamiento:**
+
+1. Se definen **una sola vez** (no en cada corrida) 4-6 puntos de referencia en el espacio R/F/M — ej. "Alto Valor" (R bajo, F alto, M alto), "Ocasional" (R alto, F bajo, M bajo), "En riesgo de fuga" (R alto, F/M históricamente altos), "Nuevo" (R bajo, F bajo, M bajo). Recomendado: calibrarlos con los mismos cortes **P33/P67** que ya usa la segmentación operacional de DFV (`docs/referencias/00_brainstorming.md:139`), porque eso favorece que "Alto Valor" en DemandSync coincida semánticamente con "alto valor" en el oráculo — ayuda directo a CP-SEG-01.
+2. Cada corrida, el clustering (Ward o K-Means, ver ADR-005) encuentra sus grupos libremente. Cada centroide resultante se etiqueta con el arquetipo más cercano — no con el cluster de la corrida anterior.
+3. Consecuencia: la etiqueta que ve el operador es **determinística por corrida**, sin retag manual en el caso normal. El administrador cura los arquetipos (coherente con CU-04: *"las etiquetas... son configurables por el administrador"*), no los clusters cada mes.
+4. Casos borde a resolver en el diseño detallado: dos clusters cercanos al mismo arquetipo (colapsan bajo la misma etiqueta, sin error); un cluster que no se parece a ningún arquetipo (etiqueta de fallback tipo "Sin clasificar" + aviso al administrador — ahí sí interviene, solo cuando aparece un patrón genuinamente nuevo).
+
+**Composición diagnóstica por cluster — no predicción cruzada.** Para cada cluster, mostrar qué categorías/productos/laboratorios están **presentes** en las compras (o predicciones ya calculadas de M3.2) de sus miembros — un `groupby(cluster) → top categorías/productos/laboratorios`, descriptivo. Ya lo piden los CU aprobados: CU-04 pide *"productos más comprados por el segmento"* y CU-05 arma venta cruzada por segmento. Es información que sale gratis de la arquitectura (B): la fila cliente×producto de M3.2 ya trae segmento (M3.3) y categoría/laboratorio (catálogo), así que cruzar es un `groupby` sobre una tabla que ya existe, sin modelo nuevo.
+
+**Explícitamente fuera de alcance por ahora:** una *predicción* reconciliada por segmento×categoría (vs. solo mostrar composición descriptiva). Motivo: M3.1 reconcilia el árbol total→categoría→laboratorio→producto sobre series **agregadas sin cliente**, mientras M3.2 predice cliente×producto con un modelo distinto (propensión). Sumar M3.2 cruzado por segmento y categoría **no está garantizado que cierre** con el número de categoría que sale reconciliado en M3.1 — son dos caminos matemáticos al mismo total. Para composición diagnóstica esto no importa (no se promete que sume exacto); si más adelante se quiere un número de categoría-por-segmento con la misma garantía de coherencia que M3.1, hay que decidir si se reconcilian entre sí — no está resuelto y no bloquea M3.3.
+
+**Nota de ownership:** cómo se **muestra** esto (heatmap, tabla, tarjetas) es diseño de Frontend (`frontend/`, stack sin definir, R4) — lo de acá es el contrato de datos que esa pantalla va a necesitar, no su UI.
 
 **Gate de salida de M3:** suite completa de predicciones coherentes + propensiones con métricas por nivel; CP-SEG-01 pasa (los segmentos no contradicen el oráculo DFV).
 
@@ -1119,7 +1245,7 @@ limpio, red de M1.3 sobre `predecir_global` cubierta, **8/8 mutaciones caen**.
 | S4–S5 | — | Deuda del generador (precondición de M2.2, no bloquea M1) | T0.4 | ✅ 2026-07-31 (23 tests) |
 | S5–S6 | M2 | Deflación (CP-INF-*) · features | M2.1–M2.2 | ✅ **M2.1** 2026-07-31 (67 tests) · **M2.2** 2026-08-04 — `motor/src/motor/features/`, gate de M1.3 cubierto (`pytest -m innegociable`), **274 tests**, `ruff` limpio, **7/7 mutaciones caen**. Validada a escala real en 3 cortes (cobertura 0,9899 sobre filas con precio propio; 2,5 s / 116k filas). **Tres correcciones a la lista de features** en §6.3 → **ADR-013**: el precio deflactado a grano producto es el ancla (identidad, CV 0,0000) y `revenue_real` es el target reescalado, así que la señal pasa a ser el **precio relativo al nivel**; `mismo_mes_año_anterior` era `lag 12`; **`CLIENTE_FEATURE` se difiere a M3.2** porque el extract real no tiene cliente×producto |
 | S6 | M1 | **Selección prospectiva · re-congelado del piso** (cierra §12.5 — unidad agregada, ver §5.7) | M1.9 | ✅ **2026-08-05 — ADR-016**. `backtests/baselines-real-prospectivo-2026-08-05.md`, misma corrida `a79a9b23676b` reusando los checkpoints: **12 segundos**, cero modelos reajustados. El piso pasa a WAPE producto **0,331** (h=1, contra 0,287 retrospectivo) con cobertura h=12 **0,9104** (contra 0,8880), y lo que queda sin cubrir son **12.700 filas = exactamente las altas de catálogo de §5.6.1**. **Hallazgo que sale del alcance de la unidad:** el sub-pronóstico de horizonte largo era del criterio de selección, no de los baselines — el sesgo total cumple el ±5% en los cuatro horizontes, lo que obliga a revisar **ADR-015** antes de ratificarlo. **289 tests**, `ruff` limpio, gate `innegociable` cubierto, **9/9 mutaciones caen**. Detalle en §5.6.2 |
-| S7 | M2 | LightGBM global · cuantiles | M2.3–M2.4 | ✅ **M2.3 2026-08-06** — `modelado/modelo_global.py` + `scripts/ablaciones_global.py`. Corre dentro del arnés y su reporte es **mergeable fila a fila** con el del piso (305.309 filas, mismo `id` `a79a9b23676b`, **las mismas 12.700 sin cubrir**). Configuración elegida por medición: **`precio+crudo`** — las features de M2.2 valen 0,0233 de WAPE a h=12 (6% relativo) y `LocalStandardScaler` **empeora 32%** a ese horizonte. Le gana al piso en **11 de 12** celdas nivel×horizonte. **Bloqueante resuelto:** `lightgbm 4.7.0` crashea con `pyarrow` cargado → pin `<4.7` + test en subproceso. **307 tests**, `ruff` limpio. Detalle en §6.4 (cambio de plan) y §6.5. M2.4 ⬜ |
+| S7 | M2 | LightGBM global · cuantiles | M2.3–M2.4 | ✅ **M2.3 2026-08-06** — `modelado/modelo_global.py` + `scripts/ablaciones_global.py`. Corre dentro del arnés y su reporte es **mergeable fila a fila** con el del piso (305.309 filas, mismo `id` `a79a9b23676b`, **las mismas 12.700 sin cubrir**). Configuración elegida por medición: **`precio+crudo`** — las features de M2.2 valen 0,0233 de WAPE a h=12 (6% relativo) y `LocalStandardScaler` **empeora 32%** a ese horizonte. Le gana al piso en **11 de 12** celdas nivel×horizonte. **Bloqueante resuelto:** `lightgbm 4.7.0` crashea con `pyarrow` cargado → pin `<4.7` + test en subproceso. **307 tests**, `ruff` limpio. Detalle en §6.4 (cambio de plan) y §6.5. · ✅ **M2.4 2026-08-06** — `backtesting/intervalos.py` + `modelado/modelo_global.py(cuantiles=)` + `scripts/intervalos_global.py`; tabla en `backtests/intervalos-global-real-2026-08-06.md` (misma corrida, 19,4 min). Cobertura empírica del P10–P90 **0,7798 / 0,8199 / 0,8130 / 0,8085** contra el 0,80 nominal, **sin recalibrar**. **Pero el agregado cancela dos errores opuestos:** `suave` calibra perfecto y `erratica` **sub-cubre 12 puntos** en los cuatro horizontes, mientras `intermitente`/`lumpy` sobre-cubren con amplitudes de hasta 13x el real → **decisión para el PM sobre ADR-015** (§6.6). El intervalo se invierte en **1 fila de 105.890**, así que M4.1 no necesita reordenar. El WAPE del punto reproduce **exacto** el de M2.3. **329 tests**, `ruff` limpio, **9/9 mutaciones caen**. Detalle en §6.6 |
 | S8 | M2 | **Champion/challenger vs piso** | M2.5 | ⬜ |
 | S9 | M3 | Reconciliación jerárquica | M3.1 | ⬜ |
 | S10–S11 | M3 | Propensión cliente×producto · RFM deflactado | M3.2–M3.3 | ⬜ |

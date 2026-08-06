@@ -11,7 +11,7 @@ referencia rápida de **cómo usar el código**.
 | `baselines.py` | `predecir_baselines(...)` — M1.5: `SeasonalNaive`, `WindowAverage`, `AutoETS`, `AutoTheta`, `AutoARIMA` vía `statsforecast`. |
 | `intermitentes.py` | `predecir_intermitentes(...)` — M1.6: `CrostonSBA`, `TSB` vía `statsforecast`. |
 | `seleccion.py` | M1.7 + M1.9: `predecir_todos_los_candidatos` (los 7 juntos, un solo pase del arnés), las **dos** selecciones (`elegir_mejor_por_serie` retrospectiva, `elegir_mejor_por_corte` prospectiva) y sus armadores de `pred`. |
-| `modelo_global.py` | `predecir_global(...)` — M2.3: LightGBM global con `mlforecast`, multi-horizonte **directo**. El primer modelo del motor. |
+| `modelo_global.py` | `predecir_global(...)` — M2.3: LightGBM global con `mlforecast`, multi-horizonte **directo**. El primer modelo del motor. Con `cuantiles=` agrega los intervalos de M2.4. |
 
 Los tres predictores cumplen el contrato `PredictorFn` de `motor.backtesting.arnes`
 (ver `backtesting/README.md`): se pasan directo a `ejecutar_backtest`.
@@ -135,6 +135,33 @@ intacto a LightGBM como *missing* nativo, en vez de imputarse.
 > **Costo:** ~14 s por corte sobre 2.128 productos y 96 meses (h=12, o sea 12 modelos).
 > Y **usá `n_jobs=1` en fixtures chicos**: medido, sobre 6 productos el paralelismo por
 > defecto cuesta 2,07 s contra 0,15 s — es todo overhead de threads.
+
+## Los intervalos (M2.4): `cuantiles=CUANTILES_ESTANDAR`
+
+`predecir_global(..., cuantiles=(0.1, 0.5, 0.9))` agrega `GlobalLGBM_P10/_P50/_P90` a la
+salida. Cada uno es un LightGBM con **pinball loss** (`objective="quantile"`, `alpha=q`), que
+es asimétrica: con `alpha=0,9` quedarse corto cuesta 9 veces más que pasarse, así que el
+modelo se acomoda en el nivel que la demanda solo supera 1 de cada 10 veces. **No es un
+post-proceso del punto**: son modelos distintos sobre la misma matriz de features.
+
+**La columna `GlobalLGBM` no cambia por pedir cuantiles, y es condición de la unidad.** Es
+el pronóstico puntual que M2.3 midió contra el piso y con el que M2.5 va a comparar; si se
+moviera, ese número dejaría de ser el medido sin que nada avisara.
+`test_los_cuantiles_no_mueven_el_pronostico_puntual` lo pide con igualdad **exacta**.
+
+**Cuesta un modelo por cuantil y por horizonte:** con `max_horizon=12`, tres cuantiles son 36
+ajustes más por corte (48 contra 12). Por eso no viene por defecto.
+
+**Los tres cuantiles se ajustan independientes, así que pueden cruzarse** (`P10 > P50`). No
+es un bug: es la consecuencia de estimar cada uno por separado. `motor.backtesting.intervalos`
+lo mide con `tasa_de_cruce` — antes de decidir si hay que reordenar, hay que saber cuán
+seguido pasa.
+
+La calibración se congela con
+[`../../../scripts/intervalos_global.py`](../../../scripts/intervalos_global.py), que necesita
+**su propio directorio de checkpoints**: el `id` de corrida no incluye el predictor, así que
+esta corrida tiene el mismo `id` que las ablaciones de M2.3 y reusaría sus checkpoints —que no
+tienen las columnas de cuantil— sin avisar.
 
 ## Costo y paralelismo — medido en M1.7, leer antes de largar una corrida grande
 
