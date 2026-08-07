@@ -71,7 +71,6 @@ from motor.reconciliacion import (
     METODOS,
     construir_estructura,
     reconciliar,
-    verificar_coherencia,
 )
 
 RAIZ_REPO = Path(__file__).resolve().parents[2]
@@ -261,27 +260,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915
     contendientes = {"sin_reconciliar": COLUMNA_BASE}
     contendientes.update({metodo: f"pred_{metodo}" for metodo in METODOS})
 
+    # La coherencia ya la verificó `reconciliar` corte por corte sobre la grilla completa,
+    # antes de enmascarar las hojas de arranque en frío — el único momento en que la salida
+    # cierra. Si no hubiera cerrado, la corrida habría levantado excepción y no habría tabla.
     tablas = {"por_nivel": _tabla_por_nivel(reconciliado, contendientes)}
-
-    coherencia = []
-    for metodo in METODOS:
-        for corte in sorted(reconciliado["corte"].dropna().unique()):
-            del_corte = reconciliado[
-                (reconciliado["corte"] == corte) & (reconciliado["ds"] > corte)
-            ]
-            incoherentes = verificar_coherencia(
-                del_corte[["unique_id", "ds", f"pred_{metodo}"]],
-                estructura,
-                columna_valor=f"pred_{metodo}",
-            )
-            coherencia.append(
-                {"metodo": metodo, "corte": corte, "celdas_incoherentes": len(incoherentes)}
-            )
-    tablas["coherencia"] = (
-        pd.DataFrame(coherencia)
-        .groupby("metodo", as_index=False)["celdas_incoherentes"]
-        .sum()
-    )
 
     duracion = time.perf_counter() - inicio
     fecha = datetime.now(tz=UTC).date().isoformat()
@@ -332,9 +314,14 @@ def _notas(args, estructura, agregadas, base, duracion) -> str:
             "criterio de aceptación de R2 en total y categoría, así que hay incentivo a "
             "leerla por donde conviene: no se hace.",
             "",
-            "> **Coherencia:** `S · base` reproduce los niveles agregados. La tabla de abajo "
-            "cuenta celdas fuera de tolerancia; tiene que dar **0** para todos los métodos. "
-            "La tolerancia es relativa porque `hierarchicalforecast` castea `S` a `float32`.",
+            "> **Coherencia: verificada, y por eso no hay tabla de coherencia.** "
+            "`reconciliar` chequea `S · base` contra los agregados en cada corte y para cada "
+            "método, sobre la grilla completa que devuelve la librería, y **corta la corrida** "
+            "si alguna celda no cierra — la coherencia es la definición de reconciliar, así "
+            "que un fallo ahí es un bug y no un hallazgo. Que esta tabla exista significa que "
+            "cerró en los 18 cortes. (No se puede verificar sobre la salida final: al "
+            "enmascarar las hojas sin pronóstico, los agregados siguen incluyendo su aporte y "
+            "la coherencia se rompe a propósito.)",
         ]
     )
 

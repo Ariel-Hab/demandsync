@@ -1939,6 +1939,79 @@ camino con tablas congeladas colgando y merece su propia verificación**, no col
 M3.1. Consecuencia mientras tanto: en los niveles agregados el base compite **sin
 `GlobalLGBM`**.
 
+### 7.3 Resultado de M3.1 (2026-08-07) — reconciliar es un canje entre niveles, y el nivel que importa lo pierde
+
+Corrida sobre `C:/dfv-extract-v2`, 2.424 series (296 agregadas + 2.128 producto), 18 cortes.
+**61,6 min** el backtest de las agregadas (la única parte que ajusta modelos) y **0,6 min** la
+reconciliación. Tabla en [`backtests/reconciliacion-real-2026-08-07.md`](backtests/reconciliacion-real-2026-08-07.md).
+
+**El control de consistencia pasa primero:** a grano producto `bottom_up` da **idéntico** a
+`sin_reconciliar` (0,3230 / 0,3667 / 0,3928 / 0,3644) —bottom-up no toca las hojas, por
+definición— y esos son **exactamente** los números del champion de M2.5. La cadena entera
+reproduce lo ya congelado.
+
+WAPE por nivel y horizonte (h=1 / 3 / 6 / 12):
+
+| nivel | `sin_reconciliar` | `bottom_up` | `ols` | `wls_struct` |
+|---|---|---|---|---|
+| **producto** | 0,3230 / 0,3667 / 0,3928 / 0,3644 | **= idem** | 0,3946 / 0,4918 / 0,5324 / 0,4304 | 0,3401 / 0,3909 / 0,4219 / 0,3787 |
+| **categoría** | – / 0,1783 / 0,2200 / 0,1764 | 0,1428 / 0,1648 / 0,2010 / 0,1754 | 0,1552 / 0,2069 / 0,2511 / 0,1892 | **0,1346 / 0,1564 / 0,1989 / 0,1642** |
+| **total** | 0,0988 / 0,1089 / 0,1233 / 0,0872 | 0,1088 / 0,1294 / 0,1458 / 0,0881 | **0,0981 / 0,1051 / 0,1185** / 0,0854 | 0,1029 / 0,1150 / 0,1417 / **0,0805** |
+
+**1. Ningún método gana en todos los niveles, y el reparto es nítido.** `bottom_up` es el mejor
+a grano **producto** (no lo puede empeorar: no lo toca) y el peor a **total**; `ols` es el mejor
+a **total** y con diferencia el peor a producto; `wls_struct` gana **categoría en los cuatro
+horizontes** y queda en el medio en todo lo demás. Es el canje clásico de la reconciliación,
+ahora medido sobre estos datos en vez de supuesto.
+
+**2. El canje que ofrece el ganador de categoría no conviene, y la razón es de producto, no de
+métrica.** `wls_struct` compra **5,7% a 6,4% en categoría** y paga **5,3% a 6,6% en producto**.
+Como el DSS sugiere órdenes **por producto** (§6.8 punto 1), eso es entregar precisión donde se
+decide para comprarla donde se reporta. **Se adopta `bottom_up`**: es el único que no degrada el
+grano de la decisión, sale gratis de sumar los checkpoints que ya existían, y su sesgo a nivel
+total queda dentro del ±5% en los cuatro horizontes.
+
+> ⚠️ **Ojo con leer esto contra ADR-018.** ADR-018 puso el criterio de aceptación del R2 en
+> **total y categoría**, así que hay un incentivo real a elegir `wls_struct` o `ols` mirando esa
+> fila. Sería optimizar el criterio de reporte a costa del criterio de uso. Si el equipo quiere
+> el número de categoría más bajo posible, es una decisión de producto explícita y va con su
+> costo escrito: −6% en producto.
+
+**3. `mint_shrink` no es estimable sobre este panel, y está medido.** No corrió en ningún corte
+—cobertura 0,0000 en toda la tabla, que es la columna que lo delata (§6.7 punto 3)— porque su
+covarianza necesita un panel de residuos **completo** y acá nunca lo hay: **solo 1 de 18 meses
+tiene las 2.128 series presentes**, porque **275 productos tienen su primera venta posterior al
+inicio de la ventana** y 1.077 de 2.128 entraron después de 2018-07. Un catálogo que crece
+continuamente no produce el rectángulo que el estimador de shrinkage pide. **No es un bug ni
+falta de tiempo: es estructural**, y por eso la degradación es explícita (queda en `NaN`) en vez
+de caer a una covarianza identidad que se habría leído como "mint corrió".
+
+**4. Lo que la unidad no puede afirmar, por los dos desvíos declarados.** El base de los niveles
+agregados compitió con **6 candidatos y no 9** (sin `GlobalLGBM` por el defecto de M2.3, sin
+`AutoTheta` por costo). `bottom_up` **no se ve afectado** —solo suma producto—, así que la
+decisión de adoptarlo está limpia. Lo que queda con asterisco es la magnitud de `ols`/
+`wls_struct` en los niveles altos: con un base mejor arriba podrían mejorar. **Como el veredicto
+fue a favor de `bottom_up`, el asterisco no lo cambia** — un base agregado mejor haría a los
+rivales más fuertes justo en los niveles donde ya ganaban, no en producto, que es donde se
+decidió.
+
+#### Tres cosas para el que siga
+
+- **`hierarchicalforecast` asume un panel rectangular y el del motor no lo es.** Costó tres
+  intentos, cada uno con la misma raíz vista de otro ángulo: falta el **número** de una celda
+  (altas de catálogo sin pronóstico, §5.6.1), falta la **fila entera** de 91 series (productos
+  cuya primera venta cae después de `corte + horizonte`), y la **coherencia no se puede exigir
+  después de enmascarar** las hojas de arranque en frío, porque ahí se rompe a propósito.
+  Ninguno de los tres aparece en el sintético: no tiene altas de catálogo.
+- **La coherencia se verifica adentro de `reconciliar` y corta la corrida.** Es la definición de
+  reconciliar, así que un fallo es un bug y no un hallazgo — no va como métrica. **Que la tabla
+  exista significa que cerró en los 18 cortes**; por eso el reporte no tiene tabla de coherencia.
+- **Reusar una instancia de reconciliador entre cortes le cambia el nombre a la columna de
+  salida.** La librería guarda el estado ajustado (`P`, `W`, `fitted`) en el `__dict__` del
+  objeto y lo lee para nombrar: el corte 1 sale `modelo/BottomUp` y del 2 en adelante
+  `modelo/BottomUp_..._P-[[...]]` con las matrices serializadas adentro del nombre. `METODOS`
+  son fábricas por eso.
+
 ## 8. M4 — Empaquetado batch e integración · S13–S15
 
 | # | Unidad de trabajo | Semana | Entregable / gate |
@@ -1975,7 +2048,7 @@ M3.1. Consecuencia mientras tanto: en los niveles agregados el base compite **si
 | S9 | M3 | **Features de dispersión** (unidad agregada 2026-08-07) | M3.0 | ❌ **2026-08-07 — CERRADA CON RESULTADO NEGATIVO (§6.10).** La hipótesis se rechaza: en `erratica` compra 0,1 a 2,3 puntos contra una brecha de 10 a 13 y **derrumba `intermitente`/`lumpy` a h=1** (el `P10 == 0` exacto cae del 82,1% al 31,4% de las filas). La dispersión ya era inferible de los lags. `usar_dispersion` queda en `False`; código, tests y tabla se conservan para que el negativo sea reproducible |
 | — | M3 | **Cierre de la deuda de `erratica`** | §12.0 | ✅ **2026-08-07 — es irreducible, medido.** Cobertura **dentro** de la muestra de entrenamiento 0,7782 contra **0,6790** a futuro (nominal 0,80): de los 12 puntos de brecha, **~2 son del modelo y ~10 son que la dispersión futura no está en el pasado de la serie**. Cuatro hipótesis descartadas con medición. No se abre unidad: el techo alcanzable está ~2 puntos por encima de lo que ya se entrega |
 | S9 | M3 | **Selección por `(cuadrante, corte)`** (unidad agregada 2026-08-07, precondición de M3.1 — §7.1) | M3.1a | ❌ **2026-08-07 — CERRADA CON RESULTADO NEGATIVO (§7.1).** `backtests/seleccion-por-cuadrante-real-2026-08-07.md`, corrida `a79a9b23676b`, **137,5 s y cero modelos reajustados**. Gana h=1 (0,3182 contra 0,3230 del champion) y **pierde los otros tres** (+7,4% / +6,0% / +4,1%); sesgo total h=6 **−0,0600**, fuera del ±5%. **La cota de §6.8 punto 5 (8,7%–2,3%) era hindsight y no se realizó.** Mecanismo: agrupar **correlaciona** la varianza de selección en vez de reducirla — el ganador de `suave` cambia 7 veces en 18 cortes y arrastra el 86% del peso cada vez. Gana fuerte en `lumpy` (−11%/−15%/−9%) pero pesa 0,33%. **386 tests** (14 nuevos), `ruff` limpio, **9/9 mutaciones caen**. El `champion` recalculado reproduce M2.5 al cuarto decimal: el camino por defecto no se movió |
-| S9 | M3 | Reconciliación jerárquica | M3.1 | ⬜ |
+| S9 | M3 | Reconciliación jerárquica | M3.1 | ✅ **2026-08-07 (§7.2 / §7.3) — se adopta `bottom_up`.** `motor/src/motor/reconciliacion/` + `scripts/reconciliar_jerarquia.py`; tabla en `backtests/reconciliacion-real-2026-08-07.md`. **La jerarquía del plan no era jerarquía** (47 de 77 laboratorios cruzan categorías, 89% de los productos): pasó a **estructura agrupada** de 5 niveles, 2.424 series. **61,6 min** el backtest de las 296 agregadas + **0,6 min** reconciliar. **Ningún método gana en todos los niveles:** `bottom_up` es el mejor en producto (no lo toca) y el peor en total; `ols` el mejor en total; `wls_struct` gana categoría en los cuatro horizontes. Se adopta `bottom_up` porque **el canje de `wls_struct` —+6% en categoría por −6% en producto— va contra el grano en que el DSS decide** (§6.8). **`mint_shrink` no es estimable**: su covarianza pide un panel completo y solo 1 de 18 meses lo tiene (275 productos con primera venta posterior al inicio). Control: `bottom_up` a grano producto reproduce **exacto** el champion de M2.5. **25 tests**, `ruff` limpio, **8/8 mutaciones caen** |
 | S10–S11 | M3 | Propensión cliente×producto · RFM deflactado | M3.2–M3.3 | ⬜ |
 | S12 | M3 | Clientes nuevos · cierre de métricas por nivel | M3.4 | ⬜ |
 | S13–S14 | M4 | Corridas versionadas · swap a PostgreSQL | M4.1–M4.2 | ⬜ |

@@ -267,6 +267,33 @@ def test_una_celda_sin_pronostico_entra_en_cero_y_sale_en_nulo(escenario):
         assert de_la_celda[f"pred_{metodo}"].isna().all(), metodo
 
 
+def test_una_serie_sin_ninguna_fila_en_el_corte_no_rompe(escenario):
+    """El segundo motivo por el que el panel real no está completo, distinto del anterior.
+
+    Un producto cuya primera venta cae después de `corte + horizonte` no tiene ningún real que
+    evaluar, así que el arnés **no le genera fila** en ese corte — no es que la fila esté con
+    `NaN`, es que no está. En la corrida real son 91 series en los cortes más viejos, y
+    `hierarchicalforecast` corta porque `S` las tiene y `Y_hat_df` no.
+
+    Se completan con 0 para reconciliar, y la salida **no puede inventar filas**: el `merge`
+    final parte de `base`, así que la serie ausente sigue ausente.
+    """
+    estructura, base = escenario
+    sin_la_serie = base[
+        ~((base["unique_id"] == "total/B/L3/4") & (base["corte"] == CORTES[0]))
+    ]
+
+    reconciliado = reconciliar(sin_la_serie, estructura, columna_modelo="modelo")
+
+    assert len(reconciliado) == len(sin_la_serie)
+    del_corte = reconciliado[reconciliado["corte"] == CORTES[0]]
+    assert "total/B/L3/4" not in set(del_corte["unique_id"])
+    # y el resto del corte sí se reconcilió
+    assert del_corte["pred_bottom_up"].notna().all()
+    # la serie sigue existiendo en los otros cortes, o el test no probaría nada
+    assert "total/B/L3/4" in set(reconciliado[reconciliado["corte"] == CORTES[1]]["unique_id"])
+
+
 def test_corta_ante_un_metodo_desconocido(escenario):
     estructura, base = escenario
     with pytest.raises(ValueError, match="Métodos desconocidos"):

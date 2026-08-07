@@ -30,7 +30,7 @@ import pandas as pd
 from hierarchicalforecast.core import HierarchicalReconciliation
 from hierarchicalforecast.methods import BottomUp, MinTrace
 
-from .estructura import Estructura
+from .estructura import Estructura, verificar_coherencia
 
 METODOS: dict[str, Callable[[], object]] = {
     "bottom_up": BottomUp,
@@ -105,6 +105,42 @@ def _matriz_de_residuos(
     return largo.set_index(columna_serie)
 
 
+def _y_hat_completo(
+    del_corte: pd.DataFrame,
+    estructura: Estructura,
+    columna_modelo: str,
+    columna_serie: str,
+    columna_fecha: str,
+) -> pd.DataFrame:
+    """La grilla `todas las series × todos los meses` del corte, sin huecos ni nulos.
+
+    `hierarchicalforecast` exige que `Y_hat_df` tenga **exactamente** las series de `S`, y el
+    panel real no las tiene todas en todo corte. Faltan por dos motivos distintos y los dos
+    son legítimos:
+
+    1. **Celdas sin pronóstico** — `armar_reporte_con_cascada` deja `NaN` donde ningún
+       candidato predijo (altas de catálogo, §5.6.1). La fila existe, el número no.
+    2. **Series sin ninguna fila** — un producto cuya primera venta cae después de
+       `corte + horizonte` no tiene ningún real que evaluar, así que el arnés no le genera
+       fila en ese corte. En la corrida real son 91 series en los cortes más viejos.
+
+    Las dos se resuelven igual —entran en 0— porque significan lo mismo para la suma: un
+    producto que todavía no existe aporta cero a su categoría. Y las dos se limpian solas a la
+    salida: `reconciliar` enmascara las del caso 1 y las del caso 2 desaparecen en el `merge`
+    final, que parte de `base` y por lo tanto nunca inventa filas que el reporte no tenía.
+    """
+    fechas = sorted(del_corte[columna_fecha].unique())
+    completo = pd.MultiIndex.from_product(
+        [estructura.S.index, fechas], names=[columna_serie, columna_fecha]
+    )
+    valores = (
+        del_corte.set_index([columna_serie, columna_fecha])[columna_modelo]
+        .reindex(completo)
+        .fillna(0.0)
+    )
+    return valores.reset_index().set_index(columna_serie)
+
+
 def reconciliar(
     base: pd.DataFrame,
     estructura: Estructura,
@@ -113,6 +149,7 @@ def reconciliar(
     columna_serie: str = "unique_id",
     columna_fecha: str = "ds",
     columna_corte: str = "corte",
+    verificar: bool = True,
 ) -> pd.DataFrame:
     """Reconcilia corte por corte y devuelve una columna por método.
 
@@ -136,6 +173,14 @@ def reconciliar(
     contendientes se midan sobre exactamente las mismas celdas. Publicar ahí el 0 relleno
     inflaría la cobertura del reconciliado y le sumaría error contra un real positivo: la
     comparación quedaría torcida en las dos direcciones.
+
+    **`verificar` chequea la coherencia adentro, y ese es el único lugar donde se puede.**
+    Sobre la salida de esta función la coherencia **no** se cumple, y a propósito: al
+    enmascarar las hojas de arranque en frío, los agregados siguen incluyendo el aporte de
+    productos cuya hoja quedó en `NaN`. La grilla completa —la que devuelve la librería, antes
+    de la máscara— existe solo dentro del bucle, así que ahí se verifica y se corta si no
+    cierra. La coherencia es la definición de reconciliar: si falla es un bug, no un hallazgo,
+    y por eso levanta excepción en vez de reportarse como métrica.
     """
     metodos = list(metodos) if metodos else list(METODOS)
     desconocidos = sorted(set(metodos) - set(METODOS))
@@ -148,14 +193,9 @@ def reconciliar(
         # LA regla: solo el error cuyo mes objetivo ya ocurrió al corte.
         observable = base[base[columna_fecha] <= corte]
 
-        # `hierarchicalforecast` rechaza nulos en `Y_hat_df`, y el champion los tiene a
-        # propósito: `armar_reporte_con_cascada` deja `NaN` donde **ningún** candidato
-        # predijo — las altas de catálogo de §5.6.1, productos cuya primera venta es
-        # posterior al corte. Se rellenan con 0 para poder reconciliar y se vuelven a
-        # enmascarar al final; ver el docstring de `reconciliar`.
-        Y_hat = del_corte[[columna_serie, columna_fecha, columna_modelo]].copy()
-        Y_hat[columna_modelo] = Y_hat[columna_modelo].fillna(0.0)
-        Y_hat = Y_hat.set_index(columna_serie)
+        Y_hat = _y_hat_completo(
+            del_corte, estructura, columna_modelo, columna_serie, columna_fecha
+        )
         residuos = _matriz_de_residuos(
             observable, estructura, columna_modelo, columna_serie, columna_fecha
         )
@@ -189,6 +229,29 @@ def reconciliar(
                 "nombres de la librería."
             )
         salida = salida[[columna_serie, columna_fecha, *renombres]].rename(columns=renombres)
+
+        # **Acá y no después**: la coherencia se verifica sobre la grilla completa que
+        # devolvió la librería. Más abajo se enmascaran las celdas de arranque en frío, y a
+        # partir de ese momento la salida **deliberadamente no cierra** — los agregados
+        # incluyen el aporte de productos cuya hoja quedó en `NaN`. Verificarla después sería
+        # medir una incoherencia que se introdujo a propósito.
+        if verificar:
+            for metodo in aplicables:
+                incoherentes = verificar_coherencia(
+                    salida,
+                    estructura,
+                    columna_valor=f"pred_{metodo}",
+                    columna_serie=columna_serie,
+                    columna_fecha=columna_fecha,
+                )
+                if not incoherentes.empty:
+                    raise RuntimeError(
+                        f"'{metodo}' devolvió {len(incoherentes)} celdas que no cierran en el "
+                        f"corte {pd.Timestamp(corte).date()} (peor desvío: "
+                        f"{incoherentes['desvio'].max():.4g}). La coherencia es la definición "
+                        "de reconciliar: si no cierra, el resultado no sirve."
+                    )
+
         for metodo in metodos:
             if metodo not in aplicables:
                 salida[f"pred_{metodo}"] = np.nan
