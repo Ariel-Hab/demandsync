@@ -19,6 +19,11 @@ import pytest
 
 from motor.backtesting.arnes import ejecutar_backtest
 from motor.backtesting.leakage import verificar_sin_leakage
+from motor.features.especificacion import (
+    VENTANAS_DISPERSION,
+    VENTANAS_MEDIA_MOVIL,
+    armar_lag_transforms,
+)
 from motor.modelado.modelo_global import (
     CUANTILES_ESTANDAR,
     NOMBRE_MODELO,
@@ -451,3 +456,84 @@ def test_cobertura_esperada_avisa_cuando_las_series_son_cortas():
     assert cobertura_esperada(largas) == 1.0
     assert cobertura_esperada(cortas) == 0.0
     assert cobertura_esperada(pd.concat([largas, cortas], ignore_index=True)) == 0.5
+
+
+# --------------------------------------------------------------------------------------
+# 6. Features de dispersión (M3.0)
+# --------------------------------------------------------------------------------------
+
+
+def test_apagado_no_cambia_nada_del_modelo_de_M2():
+    """**La garantía que protege las tablas congeladas.** El `id` de corrida es hash de
+    configuración + datos y **no incluye las features**, así que si el default de
+    `usar_dispersion` moviera el pronóstico, las tablas de M2 darían otros números bajo el
+    mismo `id` y nada lo detectaría. Igualdad exacta, no aproximada.
+    """
+    historia, corte = _historia(), pd.Timestamp("2023-06-01")
+
+    sin_flag = _predecir(historia, corte, h=6)
+    apagado = _predecir(historia, corte, h=6, usar_dispersion=False)
+
+    pd.testing.assert_frame_equal(sin_flag, apagado, check_exact=True)
+
+
+def test_encendido_si_cambia_el_pronostico():
+    """El complemento del anterior: si encender el interruptor **no** cambiara nada, el test
+    de arriba pasaría por una razón equivocada (que la feature no llega al modelo) y M3.0
+    mediría un efecto nulo creyendo haber medido el efecto de la dispersión."""
+    historia, corte = _historia(), pd.Timestamp("2023-06-01")
+
+    apagado = _predecir(historia, corte, h=6, usar_dispersion=False)
+    encendido = _predecir(historia, corte, h=6, usar_dispersion=True)
+
+    assert not np.allclose(
+        apagado[NOMBRE_MODELO].to_numpy(), encendido[NOMBRE_MODELO].to_numpy()
+    )
+
+
+def test_la_dispersion_agrega_desvio_y_cv_en_las_tres_ventanas():
+    apagadas = armar_lag_transforms(usar_dispersion=False)[1]
+    encendidas = armar_lag_transforms(usar_dispersion=True)[1]
+
+    assert len(apagadas) == len(VENTANAS_MEDIA_MOVIL)
+    # media + desvío + CV por ventana
+    assert len(encendidas) == len(VENTANAS_MEDIA_MOVIL) + 2 * len(VENTANAS_DISPERSION)
+    nombres = [type(t).__name__ for t in encendidas]
+    assert nombres.count("RollingStd") == len(VENTANAS_DISPERSION)
+    assert nombres.count("Combine") == len(VENTANAS_DISPERSION)
+
+
+def test_cada_llamada_devuelve_instancias_nuevas():
+    """Los objetos de `mlforecast` llevan estado al transformar. Compartir una instancia
+    entre dos `MLForecast` no falla: devuelve otro número."""
+    primera = armar_lag_transforms(usar_dispersion=True)[1]
+    segunda = armar_lag_transforms(usar_dispersion=True)[1]
+
+    assert all(a is not b for a, b in zip(primera, segunda, strict=True))
+
+
+def test_el_cv_da_nulo_y_no_infinito_cuando_la_ventana_esta_dormida():
+    """Una serie intermitente tiene ventanas de media cero, y `0/0` tiene que dar `NaN`:
+    LightGBM le da rama propia al nulo, mientras que un `inf` envenena los cortes del árbol.
+    """
+    from mlforecast import MLForecast
+
+    dormida = pd.DataFrame(
+        {
+            "id_producto": ["P0"] * 24,
+            "anio_mes": pd.date_range("2023-01-01", periods=24, freq="MS"),
+            "unidades": [0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 12.0, 0.0, 0.0, 0.0] * 2,
+        }
+    )
+    fcst = MLForecast(
+        models=[], freq="MS", lags=[1], lag_transforms=armar_lag_transforms(True)
+    )
+    preparado = fcst.preprocess(
+        dormida, id_col="id_producto", time_col="anio_mes", target_col="unidades", dropna=False
+    )
+
+    columnas_cv = [c for c in preparado.columns if "truediv" in c]
+    assert columnas_cv, "no se generó ninguna columna de CV"
+    for columna in columnas_cv:
+        assert not np.isinf(preparado[columna]).any()
+        assert preparado[columna].isna().any()

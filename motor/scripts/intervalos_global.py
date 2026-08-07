@@ -66,6 +66,12 @@ def parsear_argumentos(argv: list[str] | None = None) -> argparse.Namespace:
         "corresponde para la tabla real.",
     )
     parser.add_argument("--semilla", type=int, default=42)
+    parser.add_argument(
+        "--usar-dispersion",
+        action="store_true",
+        help="M3.0: agrega desvio movil y CV. Exige --checkpoint-dir PROPIO, porque el "
+        "`id` de corrida no incluye las features y reanudaria checkpoints sin ellas.",
+    )
     parser.add_argument("--checkpoint-dir", type=Path, default=None)
     parser.add_argument("--salida-dir", type=Path, default=BACKTESTS)
     return parser.parse_args(argv)
@@ -104,7 +110,9 @@ def main(argv: list[str] | None = None) -> int:
     inicio = time.perf_counter()
     reporte = ejecutar_backtest(
         hechos,
-        lambda h, c, hm, aux: predecir_global(h, c, hm, aux, cuantiles=CUANTILES_ESTANDAR),
+        lambda h, c, hm, aux: predecir_global(
+            h, c, hm, aux, cuantiles=CUANTILES_ESTANDAR, usar_dispersion=args.usar_dispersion
+        ),
         n_cortes=args.n_cortes,
         horizonte_max=args.horizonte_max,
         tablas_auxiliares={"catalogo": catalogo},
@@ -152,7 +160,8 @@ def _notas(
     cuantiles = ", ".join(nombre_de_cuantil(q) for q in CUANTILES_ESTANDAR)
     lineas = [
         f"Modelo global LightGBM (`{NOMBRE_MODELO}`) con regresión cuantílica: {cuantiles}. "
-        f"Configuración `precio+crudo`, la que eligió la ablación de M2.3.",
+        f"Configuración `precio+crudo`, la que eligió la ablación de M2.3"
+        + (" **+ features de dispersión (M3.0)**." if args.usar_dispersion else "."),
         "",
         f"- **Productos:** {hechos['id_producto'].nunique()} de {productos_totales} · "
         f"**cortes:** {args.n_cortes} · **horizonte:** {args.horizonte_max} · "

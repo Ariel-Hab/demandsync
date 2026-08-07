@@ -64,8 +64,8 @@ from motor.features.especificacion import (
     COLUMNAS_CATALOGO,
     COLUMNAS_PRECIO,
     DATE_FEATURES,
-    LAG_TRANSFORMS,
     LAGS,
+    armar_lag_transforms,
 )
 
 NOMBRE_MODELO = "GlobalLGBM"
@@ -235,6 +235,7 @@ def predecir_global(
     auxiliares: dict[str, pd.DataFrame] | None = None,
     usar_precio: bool = True,
     escalar_target: bool = False,
+    usar_dispersion: bool = False,
     hiperparametros: dict | None = None,
     cuantiles: Sequence[float] | None = None,
     columna_id: str = "id_producto",
@@ -257,6 +258,14 @@ def predecir_global(
         escalar_target: `LocalStandardScaler` de `mlforecast`. Las escalas por producto van
             de jeringas a vacunas y el modelo es uno solo, así que sin escalar las series
             grandes dominan el ajuste. Cuál conviene **se mide**, no se supone.
+        usar_dispersion: **M3.0.** Agrega desvío móvil y CV en las ventanas 3/6/12. Sin
+            esto el modelo no tiene ninguna medida de dispersión y por lo tanto **no
+            distingue `erratica` de `suave`** — se separan solo por el CV² y ninguna feature
+            lo lleva. Es la causa diagnosticada de que el intervalo sub-cubra 10 a 13 puntos
+            en ese cuadrante (§6.10). **Apagado por defecto**: encenderlo cambia el modelo,
+            y las tablas congeladas hasta M2.5 tienen que seguir reproduciéndose — el `id`
+            de corrida **no incluye las features**, así que un default distinto daría otros
+            números bajo el mismo `id` sin que nada avise.
         cuantiles: M2.4. Con `CUANTILES_ESTANDAR` agrega `GlobalLGBM_P10/_P50/_P90` sin
             tocar la columna de media. Cuesta un ajuste por cuantil **y por horizonte**
             (con `max_horizon=12`, tres cuantiles son 36 modelos más), así que se pide
@@ -291,7 +300,7 @@ def predecir_global(
         models=modelos,
         freq="MS",
         lags=LAGS,
-        lag_transforms=LAG_TRANSFORMS,
+        lag_transforms=armar_lag_transforms(usar_dispersion),
         date_features=DATE_FEATURES,
         target_transforms=[LocalStandardScaler()] if escalar_target else None,
     )
