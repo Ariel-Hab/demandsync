@@ -1661,7 +1661,7 @@ hipótesis se rechaza.** **372 tests**, `ruff` limpio.
 |---|---|---|---|
 | **M3.0** | **Features de dispersión** (`RollingStd` y CV sobre las ventanas 3/6/12 ya existentes), para cerrar la sub-cobertura del intervalo en `erratica`. **Unidad agregada el 2026-08-07 con su motivo, no estaba en el plan original** (§6.10): el diagnóstico de M2.4/M2.5 es que `erratica` se distingue de `suave` **únicamente por el CV²**, y la especificación de features de M2.2 no tiene **ninguna** medida de dispersión — solo `RollingMean`. El modelo no puede diferenciarlas. La evidencia lo respalda: donde el régimen **sí** es visible (ADI, que se ve como ceros en los lags) el modelo ensancha el intervalo hasta 13x, y a `erratica` le da la **misma anchura relativa que a `suave`**. Va antes de M3.1 porque cambiar features después obliga a rehacer la reconciliación | S9 | **Gate:** re-medir la cobertura empírica **por cuadrante** contra `intervalos-global-real-2026-08-06.md` (misma corrida, comparación fila a fila) **y** verificar que el WAPE del punto **no empeore** a ningún horizonte. Interruptor `usar_dispersion`, apagado por defecto hasta que la tabla decida — así las tablas congeladas de M2 siguen reproduciéndose. Si no cierra la brecha, la alternativa medida es **cuantiles ajustados por cuadrante**, que queda registrada acá y no se hace antes de tener este número. **❌ CERRADA 2026-08-07 con resultado NEGATIVO — la hipótesis se rechaza (§6.10).** En `erratica` compra entre 0,1 y 2,3 puntos contra una brecha de 10 a 13, y **derrumba `intermitente`/`lumpy` a h=1** (cobertura 0,857 → 0,386 y 0,709 → 0,393): las features le dieron señal al modelo para levantar el P10 por encima de cero justo donde cero era lo correcto — el `P10 == 0` exacto cae del 82,1% al 31,4% de las filas. El punto además empeora en 2 de 4 horizontes. **La dispersión ya era inferible de los lags**, así que no era un problema de información. `usar_dispersion` queda en `False`; el código, sus tests y la tabla se conservan para que el resultado negativo sea reproducible |
 | **M3.1a** | **Selección por `(cuadrante, corte)`** en vez de por `(serie, corte)` — **precondición de M3.1**. Unidad agregada el 2026-08-07 con su motivo en **§7.1**: es la palanca que §6.8 punto 5 dejó medida y sin usar (cota **2,3%–8,7%**, más que todo lo que compró M2), y va **antes** de la reconciliación porque cambia los pronósticos base que M3.1 consume — reconciliar primero y cambiar la selección después es rehacer M3.1 | S9 | Ranking por cuadrante con la regla prospectiva de ADR-016 (`hasta=corte` para clasificar, error con `anio_mes <= corte`), **cascada por serie**, y tabla congelada `backtests/seleccion-por-cuadrante-real-<fecha>.md` cruzada **fila a fila** contra la de M2.5 (mismo `id` `a79a9b23676b`, sin reajustar modelos). **Gate y criterio de promoción declarados antes de medir en §7.1**; si no los cumple se cierra en negativo como M3.0. **❌ CERRADA 2026-08-07 con resultado NEGATIVO (§7.1):** gana h=1 (**0,3182** contra 0,3230) y **pierde h=3/6/12** (+7,4% / +6,0% / +4,1%), con el sesgo total a h=6 en **−0,0600, fuera del ±5%**. La cota de §6.8 punto 5 era hindsight y no se realizó. **Agrupar no reduce la varianza de selección: la correlaciona** — el ganador de `suave` cambia 7 veces en 18 cortes y cada cambio mueve el 86% del peso. `elegir_mejor_por_cuadrante` queda en el paquete, sin llamadores por defecto |
-| **M3.1** | Reconciliación total → categoría → laboratorio → producto con `hierarchicalforecast`; bottom-up vs MinT **elegido por backtest**, no por preferencia | S9 | Forecasts coherentes; ganancia por nivel documentada |
+| **M3.1** | Reconciliación con `hierarchicalforecast` sobre una **estructura agrupada** `total → {categoría, laboratorio} → producto` — **no el árbol `total → categoría → laboratorio → producto` que decía este plan hasta el 2026-08-07**: 47 de 77 laboratorios venden en más de una categoría y cubren el 89% de los productos, así que no están anidados (motivo y medición en **§7.2**). Bottom-up vs MinT **elegido por backtest**, no por preferencia | S9 | Forecasts coherentes (`S · bottom` reproduce los agregados **exacto**); ganancia por nivel documentada a igual cobertura; **la covarianza de MinT se estima prospectivamente** (ADR-016) con test `innegociable` — ver §7.2 |
 | **M3.2** | Nivel cliente×producto: **P(compra en h)** (clasificación binaria LightGBM, mismas features) + tamaño esperado condicional. Es el output honesto: solo ~12% de los 319k pares tiene ≥12 meses de señal (EDA §5). **Recibe `CLIENTE_FEATURE`, diferida acá desde M2.2** (§6.3) | S10–S11 | Ranking de propensión; alimenta venta cruzada y redistribución (R3). **Dos precondiciones que hay que resolver acá y no antes:** (a) el **extract real no tiene cliente×producto** — o se extiende `extraer_snap.py` (túnel SSH, ~319k pares × 96 meses, mucho más pesado que lo de hoy) o M3.2 se valida solo en sintético, y eso se decide con el número de costo en la mano; (b) el generador **no modela altas ni bajas de cliente** (§12.1, deuda abierta de T0.4), así que hoy no ejercita el arranque en frío de un cliente nuevo — que es justo lo que pide M3.4 |
 | **M3.3** | Clustering RFM propio sobre montos **deflactados** (CP-INF-04), versionado por corrida; contraste contra la segmentación operacional DFV (CP-SEG-01); **etiquetado por arquetipos fijos** (ver diseño abajo) + **composición diagnóstica** por cluster | S11 | Matriz de contingencia cluster × `segmento_operacional`; `cluster_id` **no** entra como feature (ADR-005); cada cluster muestra etiqueta legible estable entre corridas y su top categoría/producto/laboratorio |
 | **M3.4** | Clientes nuevos (< 6 meses): prior del segmento operacional más cercano | S12 | Regla explícita y testeada |
@@ -1847,6 +1847,68 @@ justamente la diversidad que M1.7 mostró que valía.
 18 cortes: son las altas de catálogo, que nunca tienen error observado con qué rankear. La
 decisión de tratarlo como grupo (§7.1) no hizo daño y tampoco hizo nada — el camino efectivo
 es el fallback.
+
+### 7.2 Cambio de plan del 2026-08-07 — la jerarquía de M3.1 no era una jerarquía
+
+**Motivo (CLAUDE.md §6.4).** Este roadmap especificó M3.1 como `total → categoría →
+laboratorio → producto` desde el 2026-07-25. Al arrancar la unidad se midió contra
+`C:/dfv-extract-v2` y **no es un árbol**:
+
+| medición | valor |
+|---|---|
+| laboratorios que venden en más de una categoría | **47 de 77** |
+| productos en esos laboratorios | **1.889 de 2.128 (89%)** |
+| máximo de categorías de un mismo laboratorio | 8 |
+
+Un laboratorio **no está anidado** dentro de una categoría: son dos dimensiones que se
+**cruzan**. `hierarchicalforecast` distingue las dos formas y construye matrices `S`
+distintas. **Codificarlo como árbol no falla**: produce una `S` que afirma que cada
+laboratorio pertenece a una sola categoría y reconcilia contra restricciones que no existen,
+con números perfectamente plausibles. Es el mismo modo de falla que el mes incompleto de
+§5.5.1 y las colisiones de `producto.id` de §5.5 — el error no avisa, cambia el resultado.
+
+**Decisión: estructura agrupada**, con `categoría` y `laboratorio` como dimensiones
+cruzadas sobre el mismo nivel base. Cinco niveles: total (1), categoría (12), laboratorio
+(77), categoría×laboratorio (206) y producto (2.128). Se descartó la alternativa barata
+—quedarse con `total → categoría → producto`, que sí es árbol y son exactamente los tres
+niveles de ADR-008— porque tirar `laboratorio` descarta una agrupación con sentido de
+negocio: mismo fabricante implica promociones y quiebres de suministro compartidos, que es
+justo el tipo de señal que un nivel intermedio aporta.
+
+**No va ADR:** no mueve un gate, ni una frontera entre módulos, ni un criterio de
+aceptación. Los niveles que ADR-008 mide (producto/categoría/total) no cambian, y
+`laboratorio` ya existe en el catálogo — no hace falta ningún dato nuevo.
+
+#### Dos consecuencias de costo que conviene tener antes de prometer plazos
+
+**1. Bottom-up es gratis; MinT no.** Los checkpoints de M1.8/M2.3 tienen predicciones **solo
+a grano producto**. Bottom-up sale de sumarlas, sin reajustar nada, como M2.5. Pero MinT
+reconcilia *base forecasts de todos los niveles*, así que hay que **predecir las 296 series
+agregadas** (12+77+206+1) sobre los 18 cortes. Con el global es ~1 min; con los 7 baselines,
+~40 min extrapolando el costo por serie de §5.6.1. Es una **corrida nueva con su propio
+`--checkpoint-dir`**, no un cruce de checkpoints. (El `id` de corrida incluye la huella de
+datos y las series agregadas son otros datos, así que no puede colisionar con los de
+producto — pero el directorio propio es igual la práctica de §12.2.)
+
+**2. La covarianza de MinT hay que estimarla prospectivamente, y es la trampa fina de la
+unidad.** MinT pondera los niveles por la covarianza de los residuos. Estimarla con todos los
+cortes mete exactamente el hindsight que ADR-016 le sacó al piso — y **esta vez sería mucho
+más difícil de ver**, porque no queda en una elección de modelo visible en una tabla sino
+adentro de una matriz de pesos. Rige la misma regla: en el corte `t`, solo residuos con
+`anio_mes <= t`. Es el punto 3 de §12.6 con otra cara: **el criterio que combina niveles
+tiene que respetar la misma disciplina temporal que el que elige modelos.**
+
+**Gate de M3.1, afinado con esto:**
+
+1. **Coherencia exacta:** `S · bottom` reproduce los niveles agregados hasta tolerancia
+   numérica. Es verificable sin backtest y va como test, no como observación de la corrida.
+2. **Ganancia por nivel documentada a igual cobertura**, contra el champion sin reconciliar.
+   La reconciliación puede *empeorar* el grano producto y mejorar los agregados: eso es un
+   resultado legítimo y hay que reportarlo por nivel, no resumirlo.
+3. **Regla prospectiva bajo test `innegociable`:** perturbar los reales posteriores al corte
+   `t` no puede mover la reconciliación de los cortes ≤ t.
+4. **Bottom-up vs MinT se decide con la tabla**, no por preferencia — y bottom-up es el
+   piso a batir acá, porque es el que sale gratis.
 
 ## 8. M4 — Empaquetado batch e integración · S13–S15
 
