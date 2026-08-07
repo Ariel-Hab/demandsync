@@ -1565,11 +1565,101 @@ número, para que la decisión de retomarlo se tome con el costo a la vista y no
 > medición en vez de con opinión, y el "no" quedó con su razón. **Antes de escalar una decisión,
 > conviene gastar los minutos en verificar que sea de verdad una decisión y no un bug.**
 
+### 6.10 M3.0 cerrada con resultado negativo — las features de dispersión no eran el problema (2026-08-07)
+
+**La hipótesis, y por qué era buena.** M2.4 dejó `erratica` sub-cubriendo 10 a 13 puntos y §6.9
+descartó arreglarlo por post-proceso. Quedaba una explicación estructural y verificable: los
+cuadrantes se separan por dos ejes —**ADI** (cada cuánto vende) y **CV²** (cuánto varía cuando
+vende)— y la especificación de features de M2.2 no tenía **ninguna** medida de dispersión, solo
+`RollingMean`. `erratica` se diferencia de `suave` *únicamente* por el CV². Conclusión aparente:
+**el modelo no puede distinguirlas.**
+
+Y la evidencia parecía cerrar: donde el régimen **sí** es visible —el ADI, que se ve como ceros
+en los lags— el modelo ensancha el intervalo hasta 13x; a `erratica` le daba la misma anchura
+relativa que a `suave`. La falla estaba exactamente donde faltaba la feature.
+
+**Qué se hizo.** `RollingStd` y CV (`std/mean` vía `Combine`) en las ventanas 3/6/12, detrás del
+interruptor `usar_dispersion`. Corrida completa sobre el extract real, **21,6 min**, checkpoints
+propios, cruzada fila a fila contra la de M2.4 —**305.309 filas, misma corrida `a79a9b23676b`,
+misma cobertura de predicción (12.700 filas sin cubrir en las dos)**—, así que los números se
+restan de verdad. Tabla congelada: `backtests/intervalos-global-real-dispersion-2026-08-07.md`.
+
+#### El gate no se cumple, por los dos lados
+
+**Gate 1 — cobertura del P10–P90 por cuadrante:**
+
+| cuadrante | h=1 | h=3 | h=6 | h=12 |
+|---|---|---|---|---|
+| `erratica` M2.4 → M3.0 | 0,679 → 0,680 | 0,699 → 0,717 | 0,677 → 0,700 | 0,670 → 0,678 |
+| **ganancia** | **+0,001** | +0,018 | +0,023 | +0,008 |
+| `intermitente` | 0,857 → **0,386** | 0,923 → 0,801 | 0,911 → 0,922 | 0,907 → 0,900 |
+| `lumpy` | 0,709 → **0,393** | 0,854 → 0,780 | 0,837 → 0,859 | 0,826 → 0,824 |
+| `suave` | 0,782 → 0,761 | 0,801 → 0,782 | 0,801 → 0,784 | 0,799 → 0,788 |
+
+**En `erratica` compra entre 0,1 y 2,3 puntos contra una brecha de 10 a 13.** No cierra nada. Y
+**derrumba `intermitente` y `lumpy` a h=1** — 47 y 32 puntos de cobertura perdidos.
+
+**Gate 2 — WAPE del punto (no podía empeorar):** empeora en 2 de 4 horizontes a grano producto
+(+0,0011 a h=1 y +0,0018 a h=6; mejora 0,0027 a h=3 y 0,0047 a h=12). Marginal en las dos
+direcciones —entre 0,4% y 1,3% relativo— pero el gate pedía que no empeorara en ninguno.
+
+#### Por qué se derrumban los intermitentes, medido y no supuesto
+
+No es que el intervalo se haya angostado: la amplitud relativa de `intermitente` a h=1 pasa de
+1,648 a 1,662, prácticamente igual. **Lo que cambió es que el P10 se despegó del cero.**
+
+| `intermitente` h=1 (83,7% de las filas tienen `real == 0`) | M2.4 | M3.0 |
+|---|---|---|
+| filas con `P10 == 0` exacto | **82,1%** | **31,4%** |
+| aciertos en las filas de `real == 0` | **91,7%** | **35,5%** |
+
+Con un panel densificado a ceros (ADR-010), la fila más frecuente de una serie intermitente es
+`real == 0`, y acertarla exige `P10 <= 0`. El modelo viejo predecía **cero exacto** en el 82% de
+esos casos —lo correcto— y el nuevo solo en el 31%. Las features de dispersión le dieron señal
+para levantar el piso del intervalo justo donde el piso correcto era cero.
+
+#### Lo que esto dice, que no es lo que yo esperaba
+
+**La sub-cobertura de `erratica` no era un problema de información.** El modelo ya podía inferir
+la dispersión: con lags 1, 2, 3, 6 y 12 más tres medias móviles, un árbol puede separar "el lag 1
+está muy por encima de su media móvil" sin que nadie le pase un desvío. Darle la feature
+explícita agregó casi nada porque **la señal ya estaba disponible en otra forma**.
+
+Queda entonces abierta la pregunta de qué sí la causa. La candidata que este experimento **no**
+toca es la que motiva la opción (b): el **pinball loss está en unidades del target**, así que las
+series grandes —abrumadoramente `suave`, el 86% del volumen— dominan el ajuste de los modelos de
+cuantil igual que dominan el WAPE agregado (§6.7). Ajustar cuantiles **por cuadrante** ataca ese
+mecanismo, que es distinto del de información y sigue sin medirse. **Pero ojo con repetir el
+error de esta unidad:** ahora hay que probarlo verificando que **no rompa el `P10 == 0` de los
+intermitentes**, que es la parte que hoy funciona bien y resultó ser frágil.
+
+**Un dato que no hay que pescar del ruido:** el WAPE a nivel total a h=12 mejora **11,9%** (0,0811
+→ 0,0715). Es la celda más grande de mejora de toda la tabla y sería tentador quedársela. **No se
+adopta:** la configuración falla el gate en cobertura y empeora el punto en dos horizontes, y
+elegir una celda de la tabla final es exactamente el hindsight que ADR-016 sacó del piso. Queda
+anotado para que M3.1 lo mire con una regla prospectiva si le sirve.
+
+#### Estado y qué queda en el repo
+
+**`usar_dispersion` queda en `False`, que es como se implementó.** El código, sus 5 tests y la
+tabla congelada **se conservan**: sin ellos el resultado negativo no es reproducible y dentro de
+seis meses alguien vuelve a proponer lo mismo. La deuda de §12.0 sigue abierta y ahora con una
+hipótesis menos.
+
+> **Que el default fuera `False` desde el principio no fue prolijidad, fue lo que salvó M2.** El
+> `id` de corrida no incluye las features: con el interruptor encendido por defecto, las tablas
+> congeladas de M2.3, M2.4 y M2.5 habrían empezado a dar otros números bajo el mismo `id`, y la
+> única señal habría sido que `intermitente` sub-cubre — atribuible a cualquier cosa.
+
+**Gate de salida de M3.0:** cobertura por cuadrante re-medida contra M2.4 a igual cobertura, y
+WAPE del punto verificado. **Cumplido como procedimiento, no alcanzado como resultado: la
+hipótesis se rechaza.** **372 tests**, `ruff` limpio.
+
 ## 7. M3 — Jerarquía, cliente y segmentos · S9–S12
 
 | # | Unidad de trabajo | Semana | Entregable / gate |
 |---|---|---|---|
-| **M3.0** | **Features de dispersión** (`RollingStd` y CV sobre las ventanas 3/6/12 ya existentes), para cerrar la sub-cobertura del intervalo en `erratica`. **Unidad agregada el 2026-08-07 con su motivo, no estaba en el plan original** (§6.10): el diagnóstico de M2.4/M2.5 es que `erratica` se distingue de `suave` **únicamente por el CV²**, y la especificación de features de M2.2 no tiene **ninguna** medida de dispersión — solo `RollingMean`. El modelo no puede diferenciarlas. La evidencia lo respalda: donde el régimen **sí** es visible (ADI, que se ve como ceros en los lags) el modelo ensancha el intervalo hasta 13x, y a `erratica` le da la **misma anchura relativa que a `suave`**. Va antes de M3.1 porque cambiar features después obliga a rehacer la reconciliación | S9 | **Gate:** re-medir la cobertura empírica **por cuadrante** contra `intervalos-global-real-2026-08-06.md` (misma corrida, comparación fila a fila) **y** verificar que el WAPE del punto **no empeore** a ningún horizonte. Interruptor `usar_dispersion`, apagado por defecto hasta que la tabla decida — así las tablas congeladas de M2 siguen reproduciéndose. Si no cierra la brecha, la alternativa medida es **cuantiles ajustados por cuadrante**, que queda registrada acá y no se hace antes de tener este número |
+| **M3.0** | **Features de dispersión** (`RollingStd` y CV sobre las ventanas 3/6/12 ya existentes), para cerrar la sub-cobertura del intervalo en `erratica`. **Unidad agregada el 2026-08-07 con su motivo, no estaba en el plan original** (§6.10): el diagnóstico de M2.4/M2.5 es que `erratica` se distingue de `suave` **únicamente por el CV²**, y la especificación de features de M2.2 no tiene **ninguna** medida de dispersión — solo `RollingMean`. El modelo no puede diferenciarlas. La evidencia lo respalda: donde el régimen **sí** es visible (ADI, que se ve como ceros en los lags) el modelo ensancha el intervalo hasta 13x, y a `erratica` le da la **misma anchura relativa que a `suave`**. Va antes de M3.1 porque cambiar features después obliga a rehacer la reconciliación | S9 | **Gate:** re-medir la cobertura empírica **por cuadrante** contra `intervalos-global-real-2026-08-06.md` (misma corrida, comparación fila a fila) **y** verificar que el WAPE del punto **no empeore** a ningún horizonte. Interruptor `usar_dispersion`, apagado por defecto hasta que la tabla decida — así las tablas congeladas de M2 siguen reproduciéndose. Si no cierra la brecha, la alternativa medida es **cuantiles ajustados por cuadrante**, que queda registrada acá y no se hace antes de tener este número. **❌ CERRADA 2026-08-07 con resultado NEGATIVO — la hipótesis se rechaza (§6.10).** En `erratica` compra entre 0,1 y 2,3 puntos contra una brecha de 10 a 13, y **derrumba `intermitente`/`lumpy` a h=1** (cobertura 0,857 → 0,386 y 0,709 → 0,393): las features le dieron señal al modelo para levantar el P10 por encima de cero justo donde cero era lo correcto — el `P10 == 0` exacto cae del 82,1% al 31,4% de las filas. El punto además empeora en 2 de 4 horizontes. **La dispersión ya era inferible de los lags**, así que no era un problema de información. `usar_dispersion` queda en `False`; el código, sus tests y la tabla se conservan para que el resultado negativo sea reproducible |
 | **M3.1** | Reconciliación total → categoría → laboratorio → producto con `hierarchicalforecast`; bottom-up vs MinT **elegido por backtest**, no por preferencia | S9 | Forecasts coherentes; ganancia por nivel documentada |
 | **M3.2** | Nivel cliente×producto: **P(compra en h)** (clasificación binaria LightGBM, mismas features) + tamaño esperado condicional. Es el output honesto: solo ~12% de los 319k pares tiene ≥12 meses de señal (EDA §5). **Recibe `CLIENTE_FEATURE`, diferida acá desde M2.2** (§6.3) | S10–S11 | Ranking de propensión; alimenta venta cruzada y redistribución (R3). **Dos precondiciones que hay que resolver acá y no antes:** (a) el **extract real no tiene cliente×producto** — o se extiende `extraer_snap.py` (túnel SSH, ~319k pares × 96 meses, mucho más pesado que lo de hoy) o M3.2 se valida solo en sintético, y eso se decide con el número de costo en la mano; (b) el generador **no modela altas ni bajas de cliente** (§12.1, deuda abierta de T0.4), así que hoy no ejercita el arranque en frío de un cliente nuevo — que es justo lo que pide M3.4 |
 | **M3.3** | Clustering RFM propio sobre montos **deflactados** (CP-INF-04), versionado por corrida; contraste contra la segmentación operacional DFV (CP-SEG-01); **etiquetado por arquetipos fijos** (ver diseño abajo) + **composición diagnóstica** por cluster | S11 | Matriz de contingencia cluster × `segmento_operacional`; `cluster_id` **no** entra como feature (ADR-005); cada cluster muestra etiqueta legible estable entre corridas y su top categoría/producto/laboratorio |
@@ -1686,6 +1776,16 @@ es el entregable— no hay mejora disponible por esta vía.
 serie, o un modelo de dispersión separado del de nivel. Y antes de invertir, medir cuánto de la
 sub-cobertura es irreducible: `erratica` está definida justamente por tener CV alto con demanda
 frecuente, así que parte de esa brecha puede ser la varianza real del negocio.
+
+> ⚠️ **Actualización 2026-08-07 — la primera de esas dos vías ya se probó y falló (§6.10).**
+> `RollingStd` + CV en las ventanas 3/6/12 compra entre 0,1 y 2,3 puntos contra la brecha de 10 a
+> 13, y de paso derrumba `intermitente`/`lumpy` a h=1. **La dispersión ya era inferible de los
+> lags**, así que la sub-cobertura de `erratica` **no es un problema de información** y no hay que
+> volver a atacarla por ahí. Queda en pie la segunda vía —un modelo de dispersión aparte— y una
+> tercera que M3.0 no tocó: **ajustar los cuantiles por cuadrante**, porque el pinball loss está en
+> unidades del target y las series grandes (86% `suave`) dominan el ajuste igual que dominan el
+> WAPE agregado. Cualquiera de las dos tiene que probar además que **no rompe el `P10 == 0` de los
+> intermitentes**, que hoy funciona y resultó frágil.
 
 ⚠️ **Lo que NO hay que hacer es ensanchar el intervalo a mano hasta que dé 0,80.** Eso lo pone
 lindo en la tabla y le miente al usuario en la dirección contraria: un intervalo inflado sin
