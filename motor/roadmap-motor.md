@@ -1721,6 +1721,8 @@ hipótesis se rechaza.** **372 tests**, `ruff` limpio.
 | S7 | M2 | LightGBM global · cuantiles | M2.3–M2.4 | ✅ **M2.3 2026-08-06** — `modelado/modelo_global.py` + `scripts/ablaciones_global.py`. Corre dentro del arnés y su reporte es **mergeable fila a fila** con el del piso (305.309 filas, mismo `id` `a79a9b23676b`, **las mismas 12.700 sin cubrir**). Configuración elegida por medición: **`precio+crudo`** — las features de M2.2 valen 0,0233 de WAPE a h=12 (6% relativo) y `LocalStandardScaler` **empeora 32%** a ese horizonte. Le gana al piso en **11 de 12** celdas nivel×horizonte. **Bloqueante resuelto:** `lightgbm 4.7.0` crashea con `pyarrow` cargado → pin `<4.7` + test en subproceso. **307 tests**, `ruff` limpio. Detalle en §6.4 (cambio de plan) y §6.5. · ✅ **M2.4 2026-08-06** — `backtesting/intervalos.py` + `modelado/modelo_global.py(cuantiles=)` + `scripts/intervalos_global.py`; tabla en `backtests/intervalos-global-real-2026-08-06.md` (misma corrida, 19,4 min). Cobertura empírica del P10–P90 **0,7798 / 0,8199 / 0,8130 / 0,8085** contra el 0,80 nominal, **sin recalibrar**. **Pero el agregado cancela dos errores opuestos:** `suave` calibra perfecto y `erratica` **sub-cubre 12 puntos** en los cuatro horizontes, mientras `intermitente`/`lumpy` sobre-cubren con amplitudes de hasta 13x el real → **decisión para el PM sobre ADR-015** (§6.6). El intervalo se invierte en **1 fila de 105.890**, así que M4.1 no necesita reordenar. El WAPE del punto reproduce **exacto** el de M2.3. **329 tests**, `ruff` limpio, **9/9 mutaciones caen**. Detalle en §6.6 |
 | S8 | M2 | **Champion/challenger vs piso** | M2.5 | ✅ **2026-08-06 — ADR-017**. `backtesting/checkpoints.py` + `backtesting/comparacion.py` + `scripts/global_vs_baselines.py`; tabla en `backtests/global-vs-baselines-real-2026-08-06.md`. **45 s, cero modelos reajustados** (los checkpoints de las dos corridas comparten `id`). **Lo promocionable es el champion, no el global solo:** el global pierde a h=12 contra el piso (0,3746 vs 0,3699) y en `intermitente`/`lumpy` es **2 a 3x peor que el baseline** con sobre-pronóstico que crece con el horizonte (+511% en `lumpy` a h=12) — 31% de los productos, 0,6% del peso del WAPE. El champion gana los cuatro horizontes (**0,3230 / 0,3667 / 0,3928 / 0,3644**) con sesgo dentro del ±5%; los baselines se quedan con el **84%** de los pares. Cierra el P50 de §6.6: gana 3.512 turnos y mueve el WAPE 0,001, con sesgo −8,4%/−13,4% que viola ADR-008. **367 tests**, `ruff` limpio, **13/13 mutaciones caen**. Detalle en §6.7; **evaluación de la fase en §6.8** |
 | — | **M2** | **Cierre de fase** | — | ✅ **2026-08-06 — gate cumplido (§6.7).** Evaluación en **§6.8**: la ganancia sobre el piso, medida en lo promocionable, es **1,5% a 2,6%** a grano producto (no el 10,66% del titular de M2.3, que era el global solo). Siete ADRs registrados, tres de ellos abiertos porque un número no cerraba. **La palanca más grande que queda:** seleccionar por `(cuadrante, corte)` en vez de por `(serie, corte)` — cota estimada con hindsight, **4,9% a 8,7%** |
+| S9 | M3 | **Features de dispersión** (unidad agregada 2026-08-07) | M3.0 | ❌ **2026-08-07 — CERRADA CON RESULTADO NEGATIVO (§6.10).** La hipótesis se rechaza: en `erratica` compra 0,1 a 2,3 puntos contra una brecha de 10 a 13 y **derrumba `intermitente`/`lumpy` a h=1** (el `P10 == 0` exacto cae del 82,1% al 31,4% de las filas). La dispersión ya era inferible de los lags. `usar_dispersion` queda en `False`; código, tests y tabla se conservan para que el negativo sea reproducible |
+| — | M3 | **Cierre de la deuda de `erratica`** | §12.0 | ✅ **2026-08-07 — es irreducible, medido.** Cobertura **dentro** de la muestra de entrenamiento 0,7782 contra **0,6790** a futuro (nominal 0,80): de los 12 puntos de brecha, **~2 son del modelo y ~10 son que la dispersión futura no está en el pasado de la serie**. Cuatro hipótesis descartadas con medición. No se abre unidad: el techo alcanzable está ~2 puntos por encima de lo que ya se entrega |
 | S9 | M3 | Reconciliación jerárquica | M3.1 | ⬜ |
 | S10–S11 | M3 | Propensión cliente×producto · RFM deflactado | M3.2–M3.3 | ⬜ |
 | S12 | M3 | Clientes nuevos · cierre de métricas por nivel | M3.4 | ⬜ |
@@ -1760,36 +1762,72 @@ hipótesis se rechaza.** **372 tests**, `ruff` limpio.
 El dataset sintético **no está en el repo**, así que ninguna validación a escala corre en un
 clon nuevo hasta regenerarlo.
 
-### 12.0 La sub-cobertura del intervalo en `erratica` (abierta, con costo medido)
+### 12.0 La sub-cobertura del intervalo en `erratica` — **cerrada: es irreducible** (2026-08-07)
 
-El intervalo P10–P90 sub-cubre **10 a 13 puntos** en el cuadrante `erratica`, en los cuatro
-horizontes (M2.4, §6.6). **No se repara por post-proceso: se midió** (§6.9) — la calibración
-conformal prospectiva recupera ~10 puntos a h=1 y **cero a h=12**, porque a doce meses vista casi
-no hay error ya observado con el que calibrar sin violar ADR-016.
+El intervalo P10–P90 cubre **0,679** en el cuadrante `erratica` contra el 0,80 nominal, en los
+cuatro horizontes (M2.4, §6.6). **No es un defecto reparable del motor: la mayor parte de esa
+brecha es dispersión genuina del negocio.** Está medido, no supuesto, y esta sección existe para
+que nadie vuelva a gastar una unidad de trabajo en repararlo.
 
-**Por qué no se abrió unidad de trabajo:** `erratica` es el **11% de los productos** y el **13%
-del volumen**; la mejora disponible está en horizonte corto, donde el entregable comprometido es
-el **punto** y no el intervalo (ADR-018 punto 1), y en horizonte largo —donde el intervalo *sí*
-es el entregable— no hay mejora disponible por esta vía.
+#### Las cuatro hipótesis que se probaron y se descartaron
 
-**Si se retoma, hay que atacarlo en el modelo, no después:** features de volatilidad de la propia
-serie, o un modelo de dispersión separado del de nivel. Y antes de invertir, medir cuánto de la
-sub-cobertura es irreducible: `erratica` está definida justamente por tener CV alto con demanda
-frecuente, así que parte de esa brecha puede ser la varianza real del negocio.
+| hipótesis | cómo se midió | resultado |
+|---|---|---|
+| **Falta información** — el modelo no sabe qué tan variable es cada serie | `RollingStd` + CV en las ventanas 3/6/12, corrida completa (M3.0, §6.10) | ❌ Compra 0,1 a 2,3 puntos contra una brecha de 10 a 13, **y derrumba `intermitente`/`lumpy` a h=1**. La dispersión ya era inferible de los lags |
+| **Se arregla por post-proceso** | Calibración conformal CQR prospectiva por (cuadrante, horizonte), sobre los checkpoints de M2.4 (§6.9) | ❌ +10 puntos a h=1, **cero a h=12**; imposible en `intermitente` (átomo del 81% en cero); empeora `suave` |
+| **El intervalo no escala con el tamaño** del producto | Ancho absoluto contra escala mediana, por decil de tamaño | ❌ `ancho/escala` ≈ 0,8–1,4 en los deciles 2–10: **escala bien**. La escala va ×703 y el ancho ×12.247 |
+| **Los hiperparámetros están mal** (los de cuantil son los mismos que los de la media, sin tunear) | **Cobertura dentro de la muestra de entrenamiento** contra la de fuera, mismo corte | ❌ **Ver abajo: explica ~2 de los 12 puntos** |
 
-> ⚠️ **Actualización 2026-08-07 — la primera de esas dos vías ya se probó y falló (§6.10).**
-> `RollingStd` + CV en las ventanas 3/6/12 compra entre 0,1 y 2,3 puntos contra la brecha de 10 a
-> 13, y de paso derrumba `intermitente`/`lumpy` a h=1. **La dispersión ya era inferible de los
-> lags**, así que la sub-cobertura de `erratica` **no es un problema de información** y no hay que
-> volver a atacarla por ahí. Queda en pie la segunda vía —un modelo de dispersión aparte— y una
-> tercera que M3.0 no tocó: **ajustar los cuantiles por cuadrante**, porque el pinball loss está en
-> unidades del target y las series grandes (86% `suave`) dominan el ajuste igual que dominan el
-> WAPE agregado. Cualquiera de las dos tiene que probar además que **no rompe el `P10 == 0` de los
-> intermitentes**, que hoy funciona y resultó frágil.
+#### El test que cierra la pregunta
 
-⚠️ **Lo que NO hay que hacer es ensanchar el intervalo a mano hasta que dé 0,80.** Eso lo pone
-lindo en la tabla y le miente al usuario en la dirección contraria: un intervalo inflado sin
-sustento no informa riesgo, solo lo simula. ADR-018 punto 2 elige documentar el número real.
+La medición decisiva es **cuánto cubre el intervalo sobre las filas con las que el modelo se
+entrenó**, donde no hay nada que predecir. Si ahí tampoco llega al 0,80, el modelo no puede
+*representar* esa dispersión y es cuestión de capacidad. Si ahí llega y solo falla a futuro,
+la dispersión no es *anticipable* y no hay modelo que lo arregle.
+
+Un solo ajuste en el corte 2025-06 (**1,2 min**), con la misma configuración que
+`predecir_global` y `fitted=True`, cobertura a h=1:
+
+| cuadrante | en entrenamiento | a futuro | caída |
+|---|---|---|---|
+| `suave` | 0,8170 | 0,7820 | 0,035 |
+| **`erratica`** | **0,7782** | **0,6790** | **0,099** |
+| `lumpy` | 0,8767 | 0,7089 | 0,168 |
+
+**Sobre datos ya vistos, `erratica` llega a 0,778 — a 2,2 puntos del nominal.** El modelo sí puede
+representar esa dispersión. Los ~10 puntos restantes se pierden enteros al pasar a datos no
+vistos. El contraste con `suave` lo confirma: la misma transición le cuesta 3,5 puntos, no 9,9.
+**La diferencia entre cuadrantes no está en lo que el modelo puede representar, está en lo que se
+puede anticipar.**
+
+Consecuencia práctica: **tunear los hiperparámetros recuperaría como mucho 2 de los 12 puntos**,
+y probablemente menos — más capacidad sube el ajuste sobre lo visto y **empeora** lo no visto, que
+es donde está el problema. El barrido de capacidad que parecía el siguiente paso obvio habría sido
+contraproducente, y este test de 1,2 min lo evitó.
+
+> ⚠️ **Trampa del método, y casi me la como.** La primera versión de este test daba `erratica` en
+> 0,743 y los intermitentes al revés de lo esperado. **El arnés densifica el panel a ceros
+> (ADR-010) antes de entrenar y el script del diagnóstico no lo hacía**, así que estaba ajustando
+> un modelo distinto: 13,6% de ceros en entrenamiento contra 81,5% a futuro. Se detectó
+> **comparando la composición de las dos muestras antes de interpretar el número**, no después.
+> Cualquier medición dentro-vs-fuera tiene que verificar primero que las dos muestras sean
+> comparables; si no, mide la diferencia de muestreo y la llama hallazgo.
+
+#### Qué queda decidido
+
+- **La brecha se documenta, no se promete.** Es exactamente lo que decidió **ADR-018 punto 2**, y
+  ahora esa decisión tiene respaldo medido en vez de resignación: publicar el 0,679 real de
+  `erratica` es informar una propiedad del negocio.
+- **No se abre unidad de trabajo, y la razón cambió.** Antes era costo/beneficio (`erratica` es el
+  11% de los productos y el 13% del volumen). Ahora es que **no hay nada que reparar**: el techo
+  alcanzable con este enfoque está ~2 puntos por encima de lo que ya se entrega.
+- **Lo único que quedaría por probar** —cuantiles ajustados por cuadrante, para que `suave` no
+  domine el pinball loss— ataca el componente de **representación**, que ahora sabemos que vale
+  2 puntos. **No lo vale.** Queda registrado como descartado por tamaño del premio, no por falta
+  de ideas.
+- Si alguna vez cambia el dato de entrada —más historia, o una feature exógena que anticipe los
+  saltos (promociones, quiebres de stock del competidor)— la conclusión hay que rehacerla: lo que
+  se midió es que el pasado de la serie no anticipa su dispersión futura, no que nada pueda.
 
 ### 12.1 Deuda del generador sintético → **T0.4**
 

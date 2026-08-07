@@ -1,5 +1,18 @@
 # Piso de baselines — sintetico (2026-07-30)
 
+> ⛔ **TABLA CADUCADA — no la uses como referencia.** Se congeló el 2026-07-30 y **T0.4
+> reescribió el generador sintético al día siguiente**: misma muestra y misma semilla, otro
+> dataset (38.095 filas contra 27.683). Los números de abajo describen un dataset que ya no se
+> puede regenerar. Ver `roadmap-motor.md` §6.4.
+>
+> **Dónde está el piso sintético vigente:** la columna `piso` de
+> [`global-vs-baselines-sintetico-2026-08-07.md`](global-vs-baselines-sintetico-2026-08-07.md),
+> con selección **prospectiva** (ADR-016) sobre el generador actual.
+>
+> Se conserva como registro histórico y porque los hallazgos de M1.7 sobre el reparto de
+> ganadores se midieron acá. **Una tabla congelada sobre el sintético caduca cuando cambia el
+> generador; las de datos reales no.**
+
 Selección por serie (M1.7) entre 7 candidatos: `SeasonalNaive`, `WindowAverage`, `AutoETS`, `AutoTheta`, `AutoARIMA`, `CrostonSBA`, `TSB`.
 
 - **Productos:** 400 · **cortes:** 18 · **horizonte:** 12 · **n_jobs:** 4

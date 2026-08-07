@@ -65,3 +65,15 @@ corridas queda auditable.
 **Y no se compara contra una tabla armada con otro criterio de selección.** Es el error que
 M1.9 vino a evitar: medir el modelo global prospectivamente contra un piso retrospectivo
 inclina la cancha en contra del global, y al revés la inclina a favor.
+
+### Una tabla sobre el sintético caduca; una sobre datos reales no
+
+El dataset sintético se regenera por semilla, así que **si cambia el generador, la tabla
+describe un dataset que ya no se puede reproducir** — aunque la semilla y la muestra sean las
+mismas. Pasó con `baselines-sintetico-2026-07-30.md`: T0.4 reescribió el generador al día
+siguiente de congelarla (`roadmap-motor.md` §6.4). El extract real, en cambio, es una foto
+fija: sus tablas siguen siendo comparables mientras no se re-extraiga.
+
+El `id` de corrida lo detecta —cambia la huella de datos, cambia el `id`— **pero solo si
+alguien lo mira**. Por eso una tabla sintética que caducó lleva el aviso **en su encabezado**
+y no solo en el roadmap: quien la abra tiene que enterarse ahí, no tres documentos después.
