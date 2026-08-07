@@ -227,16 +227,13 @@ def verificar_coherencia(
     unidades están en miles — un falso positivo que haría abandonar un método sano. Un error
     estructural, en cambio, es de orden 1 **relativo** y `rtol=1e-4` lo caza igual.
     """
-    # `fill_value=0` y no NaN: una celda ausente en el panel base es una serie que todavía
-    # no existía, y `aggregate` la trata igual — no suma nada. Con NaN el producto `S · base`
-    # daría NaN, la comparación `> tolerancia` sería `False` y **la incoherencia pasaría sin
-    # marcarse**, que es peor que no verificar: da una falsa señal de que cierra.
+    # `aggfunc="sum"` ya manda las celdas ausentes a 0 —suma de vacío es 0—, que es como las
+    # trata `aggregate`: una serie que todavía no existía no aporta nada. Lo que atrapa un
+    # NaN colado es `np.isclose` de abajo, que lo devuelve `False` y por lo tanto lo marca;
+    # con la comparación `desvio > tolerancia` que había antes, un NaN daba `False` y **la
+    # incoherencia pasaba sin marcarse**, que es peor que no verificar.
     ancho = valores.pivot_table(
-        index=columna_fecha,
-        columns=columna_serie,
-        values=columna_valor,
-        aggfunc="sum",
-        fill_value=0,
+        index=columna_fecha, columns=columna_serie, values=columna_valor, aggfunc="sum"
     )
     faltantes = sorted(set(estructura.S.index) - set(ancho.columns))
     if faltantes:

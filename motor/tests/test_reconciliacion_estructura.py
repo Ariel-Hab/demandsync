@@ -100,11 +100,8 @@ def test_la_verificacion_detecta_una_incoherencia_sembrada():
 
 
 def test_un_hueco_en_el_panel_base_no_pasa_como_coherente():
-    """Un mes ausente se cuenta como 0 y **no** como NaN.
-
-    Con NaN el producto `S · base` daría NaN, la comparación sería `False` y la incoherencia
-    pasaría sin marcarse — una falsa señal de que cierra, que es peor que no verificar.
-    """
+    """Si falta la fila de un producto en un mes, los agregados que lo contienen dejan de
+    cerrar y eso tiene que **marcarse**, no pasar en silencio."""
     estructura = construir_estructura(_hechos(), _catalogo())
     valores = estructura.Y_df.reset_index()
     sin_un_producto = valores[
@@ -114,6 +111,26 @@ def test_un_hueco_en_el_panel_base_no_pasa_como_coherente():
     incoherentes = verificar_coherencia(sin_un_producto, estructura, columna_valor="y")
     assert not incoherentes.empty
     assert "total" in set(incoherentes["unique_id"])
+
+
+def test_un_metodo_que_no_corrio_no_se_reporta_como_incoherente():
+    """Para qué está realmente el `fill_value=0` del pivot.
+
+    `reconciliar` deja en `NaN` la columna de un método que no pudo correr en un corte —
+    `mint_shrink` sin residuos observados, por ejemplo. Esa columna llega acá **entera** en
+    nulo, y sin el relleno `np.isclose(NaN, NaN)` daría `False` y la corrida reportaría
+    "incoherente" un método que simplemente no se ejecutó: una falsa alarma que haría
+    descartar un método sano.
+
+    *(Este test existe porque la verificación por mutación mostró que el otro no discriminaba
+    el `fill_value`: al usar `np.isclose`, un hueco parcial queda marcado igual por
+    propagación de NaN. El comentario del código decía una cosa y el test probaba otra.)*
+    """
+    estructura = construir_estructura(_hechos(), _catalogo())
+    valores = estructura.Y_df.reset_index().assign(pred=np.nan)
+
+    incoherentes = verificar_coherencia(valores, estructura, columna_valor="pred")
+    assert incoherentes.empty
 
 
 def test_densifica_antes_de_agregar():
