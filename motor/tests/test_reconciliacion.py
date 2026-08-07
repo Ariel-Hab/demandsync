@@ -232,6 +232,41 @@ def test_conserva_la_forma_del_base(escenario):
         assert f"pred_{metodo}" in reconciliado.columns
 
 
+def test_una_celda_sin_pronostico_entra_en_cero_y_sale_en_nulo(escenario):
+    """El choque entre dos decisiones del motor, resuelto sin romper ninguna.
+
+    `armar_reporte_con_cascada` deja `NaN` donde **ningún** candidato predijo —las altas de
+    catálogo de §5.6.1, que son 12.700 filas en la corrida real— y `hierarchicalforecast`
+    rechaza una `Y_hat_df` con nulos. Se rellena con 0 para poder reconciliar y se enmascara
+    de vuelta al salir.
+
+    Las dos mitades importan y por eso se asertan las dos: sin el relleno la corrida **muere**;
+    sin la máscara, el reconciliado aparecería cubriendo filas que el champion no cubre y en
+    `metricas.wape` un 0 contra un real positivo suma error mientras que una celda ausente no
+    — la comparación quedaría torcida en las dos direcciones (§6.7 punto 3).
+    """
+    estructura, base = escenario
+    hueco = (base["unique_id"] == "total/A/L1/1") & (base["ds"] == pd.Timestamp("2025-07-01"))
+    assert hueco.any()
+    base = base.copy()
+    base.loc[hueco, "modelo"] = np.nan
+
+    reconciliado = reconciliar(base, estructura, columna_modelo="modelo")
+
+    # 1. no explotó, y el resto del corte sí se reconcilió
+    del_corte = reconciliado[reconciliado["corte"] == CORTES[0]]
+    otras = del_corte[del_corte["unique_id"] != "total/A/L1/1"]
+    assert otras["pred_bottom_up"].notna().all()
+
+    # 2. la celda sin base sale nula en TODOS los métodos, no con el 0 de relleno
+    de_la_celda = reconciliado[
+        (reconciliado["unique_id"] == "total/A/L1/1")
+        & (reconciliado["ds"] == pd.Timestamp("2025-07-01"))
+    ]
+    for metodo in ("bottom_up", "ols", "wls_struct", "mint_shrink"):
+        assert de_la_celda[f"pred_{metodo}"].isna().all(), metodo
+
+
 def test_corta_ante_un_metodo_desconocido(escenario):
     estructura, base = escenario
     with pytest.raises(ValueError, match="Métodos desconocidos"):

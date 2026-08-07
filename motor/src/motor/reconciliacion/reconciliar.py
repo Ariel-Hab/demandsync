@@ -126,6 +126,16 @@ def reconciliar(
     cuyo `columna_fecha <= t`. Un pronóstico emitido en `t-1` a h=12 recién sirve de residuo
     cuando su mes llega; hasta entonces nadie sabe si acertó. Es literalmente el mismo filtro
     de `modelado.seleccion.elegir_mejor_por_corte`, por el mismo motivo.
+
+    **Las celdas sin pronóstico entran en 0 y salen en `NaN`.** El champion tiene nulos a
+    propósito —`armar_reporte_con_cascada` no inventa donde ningún candidato predijo, que son
+    las altas de catálogo de §5.6.1— y `hierarchicalforecast` rechaza una `Y_hat_df` con
+    nulos. Se rellenan con 0 para poder reconciliar, que además es lo que ya hacían
+    implícitamente las tablas de M2.3/M2.5 al agregar por categoría (`sum` saltea nulos, o sea
+    los cuenta como 0), y **se vuelven a enmascarar en la salida** para que todos los
+    contendientes se midan sobre exactamente las mismas celdas. Publicar ahí el 0 relleno
+    inflaría la cobertura del reconciliado y le sumaría error contra un real positivo: la
+    comparación quedaría torcida en las dos direcciones.
     """
     metodos = list(metodos) if metodos else list(METODOS)
     desconocidos = sorted(set(metodos) - set(METODOS))
@@ -138,7 +148,14 @@ def reconciliar(
         # LA regla: solo el error cuyo mes objetivo ya ocurrió al corte.
         observable = base[base[columna_fecha] <= corte]
 
-        Y_hat = del_corte[[columna_serie, columna_fecha, columna_modelo]].set_index(columna_serie)
+        # `hierarchicalforecast` rechaza nulos en `Y_hat_df`, y el champion los tiene a
+        # propósito: `armar_reporte_con_cascada` deja `NaN` donde **ningún** candidato
+        # predijo — las altas de catálogo de §5.6.1, productos cuya primera venta es
+        # posterior al corte. Se rellenan con 0 para poder reconciliar y se vuelven a
+        # enmascarar al final; ver el docstring de `reconciliar`.
+        Y_hat = del_corte[[columna_serie, columna_fecha, columna_modelo]].copy()
+        Y_hat[columna_modelo] = Y_hat[columna_modelo].fillna(0.0)
+        Y_hat = Y_hat.set_index(columna_serie)
         residuos = _matriz_de_residuos(
             observable, estructura, columna_modelo, columna_serie, columna_fecha
         )
@@ -182,7 +199,20 @@ def reconciliar(
         return base.copy()
 
     reconciliado = pd.concat(partes, ignore_index=True)
-    return base.merge(reconciliado, on=[columna_serie, columna_fecha, columna_corte], how="left")
+    resultado = base.merge(
+        reconciliado, on=[columna_serie, columna_fecha, columna_corte], how="left"
+    )
+
+    # Se devuelve el `NaN` donde el base no tenía pronóstico. Sin esto, esas celdas saldrían
+    # con un número —el 0 con que se rellenó, o lo que MinT le reparta— y **la cobertura de
+    # los contendientes dejaría de ser igual**: el reconciliado aparecería cubriendo 12.700
+    # filas que el champion no cubre, y en `metricas.wape` una predicción de 0 contra un real
+    # positivo suma error mientras que una ausente no. La comparación se volvería injusta en
+    # las dos direcciones a la vez (§6.7 punto 3).
+    sin_base = resultado[columna_modelo].isna()
+    for metodo in metodos:
+        resultado.loc[sin_base, f"pred_{metodo}"] = np.nan
+    return resultado
 
 
 def _nombre_de_salida(columna_modelo: str, metodo: str) -> str:
