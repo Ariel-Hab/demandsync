@@ -676,7 +676,7 @@ congelada, no que se haya congelado con un criterio en particular. Lo que M1.9 c
 | **M2.2** | Features: lags (1,2,3,6,12), rolling means (3,6,12), mes del año, categoría/laboratorio, escala de precio (ancla) y **precio relativo al nivel** con su variación. *(Tres correcciones a la lista original, medidas: ver §6.3 y ADR-013)* | S5–S6 | **✅ CERRADA 2026-08-04** — `motor/src/motor/features/`: `especificacion.py` (lo que ejecuta `mlforecast`) + `precio.py` + `construccion.py`. Pasa la red de M1.3 (`pytest -m innegociable`). **274 tests**, `ruff` limpio; las **7 mutaciones caen**. Validado a escala real en 3 cortes: cobertura 0,9899 sobre filas con precio propio, CV intra-producto 0,1511, **2,5 s** sobre 116k filas |
 | **M2.3** | LightGBM global con `mlforecast`, **multi-horizonte directo** (`max_horizon=12`: un modelo por horizonte) | S6–S7 | Corre dentro del arnés, comparable 1:1 con el piso. **✅ 2026-08-06** — ver §6.5. Se cumple en sentido literal: los dos reportes se mergean fila a fila y las filas sin cubrir son las mismas |
 | **M2.4** | Intervalos: quantile regression P10/P50/P90 | S7 | Cobertura empírica de los intervalos reportada (¿el P10–P90 cubre ~80%?). **✅ CERRADA 2026-08-06** — `backtests/intervalos-global-real-2026-08-06.md`: **0,7798 / 0,8199 / 0,8130 / 0,8085** contra el 0,80 nominal. Ver §6.6 |
-| **M2.5** | **Champion/challenger por serie** + reporte comparativo contra el piso congelado, sobre sintético **y** real | S8 | `motor/backtests/global-vs-baselines-<fecha>.md`. **✅ CERRADA 2026-08-06 — ADR-017: lo promocionable es el champion, no el global solo.** El global solo **no cumple el gate** (a h=12 producto da 0,3746 contra 0,3699 del piso) y en `intermitente`/`lumpy` —31% de los productos, 0,6% del peso del WAPE— es **2 a 3 veces peor que el baseline**. El champion gana los cuatro horizontes: **0,3230 / 0,3667 / 0,3928 / 0,3644**. Ver §6.7 |
+| **M2.5** | **Champion/challenger por serie** + reporte comparativo contra el piso congelado, sobre sintético **y** real | S8 | `motor/backtests/global-vs-baselines-<fecha>.md`. **✅ CERRADA 2026-08-06 — ADR-017: lo promocionable es el champion, no el global solo.** El global solo **no cumple el gate** (a h=12 producto da 0,3746 contra 0,3699 del piso) y en `intermitente`/`lumpy` —31% de los productos, 0,6% del peso del WAPE— es **2 a 3 veces peor que el baseline**. El champion gana los cuatro horizontes: **0,3230 / 0,3667 / 0,3928 / 0,3644**. **Corrida sintética también hecha** (`-sintetico-2026-08-07.md`): replica que el champion le gana al piso, y **contradice** el resto — ahí el global gana 3 de 4 horizontes porque el generador no reproduce las ráfagas, así que validar solo en sintético habría promocionado el global (§6.7 punto 6). Ver §6.7 |
 
 **Gate de salida de M2** (= puntos 2–4 de la Definición de listo de `plan-diseno.md`), **precisado por horizonte en ADR-015 (2026-08-05)** porque el piso real incumple el ±5% en h=6/h=12 (§5.6.1):
 
@@ -1293,6 +1293,45 @@ global) — coherente con que la mediana de una serie intermitente es baja o cer
   candidatos y **las mismas 335** con 9; la mediana de cambios sube de 6 a 7. Agregar
   candidatos no estabiliza la selección, la agita un poco más.
 
+#### 6. El sintético habría promocionado el global — y esa es la mejor evidencia de por qué el gate lo pedía
+
+El gate de M2.5 exige la corrida sobre sintético **y** sobre real, con este motivo escrito en §6:
+*"validar solo en sintético haría ver al modelo mejor de lo que es"*. La corrida sintética
+(`backtests/global-vs-baselines-sintetico-2026-08-07.md`, corrida `be8823f67f16`, 400 productos
+estratificados, **8,9 s**) lo confirma de la forma más útil posible: **contradiciendo la
+conclusión.**
+
+WAPE a grano producto, sintético:
+
+| | h=1 | h=3 | h=6 | h=12 |
+|---|---|---|---|---|
+| piso | 0,9819 | 0,9366 | 0,9380 | 0,9465 |
+| global solo | **0,9360** | **0,8736** | 0,9122 | **0,8883** |
+| champion | 0,9657 | 0,9000 | **0,8817** | 0,9340 |
+
+**Sobre el sintético el global gana 3 de 4 horizontes, incluido h=12 — que es exactamente la
+celda donde sobre datos reales pierde.** Un equipo que hubiera validado solo acá habría
+promocionado el global sin ver el problema.
+
+**Qué replica y qué no**, que es lo que hay que leer:
+
+- **Replica:** el champion le gana al piso en los cuatro horizontes. La conclusión central de
+  M2.5 —seleccionar por serie contra un piso prospectivo mejora— se sostiene en los dos datasets.
+- **No replica, y es el motivo de ADR-017:** el derrumbe del global en `intermitente`/`lumpy`. En
+  sintético, `lumpy` h=12 da **1,455 del global contra 1,368 del piso** (6% peor); en real da
+  **5,63 contra 2,55** (121% peor). El generador no reproduce la estructura de ráfagas del
+  catálogo real, así que el modo de falla que decide la promoción **no existe en el sintético**.
+- **Y la composición es otra por diseño:** la muestra estratificada fuerza `suave` al 32% del peso
+  cuando en real es el 86%, y `lumpy` al 14,6% cuando en real es el 0,33%. Eso solo ya hace que
+  los dos agregados **no sean comparables entre sí** — se leen por separado, como dice §5.6.
+
+> **La regla que esto deja:** el sintético sirve para verificar que el pipeline corre y que las
+> métricas se calculan, y **es bueno en eso** — encontró cero problemas nuevos acá, que es
+> justamente lo que se espera de un smoke. Lo que no puede hacer es decidir **qué modelo se
+> promociona**, porque el generador no tiene los modos de falla que deciden. Es la misma lección
+> que ADR-013 dejó con las ablaciones de precio, ahora con un caso donde la conclusión equivocada
+> era plausible y accionable.
+
 #### Lo que le deja al PM y al Analista
 
 El punto 4 de ADR-017: **decidir con el desagregado por cuadrante en la mano es lo que evitó
@@ -1312,8 +1351,9 @@ exige cobertura **mayor que cero e igual** entre los dos. Vale para cualquier co
 futura entre predictores, no solo para esta.
 
 **Gate de salida de M2.5:** reporte comparativo contra el piso congelado, sobre sintético y
-real, con el reparto por serie. **Cumplido.** **367 tests**, `ruff` limpio, **13/13
-mutaciones caen**.
+real, con el reparto por serie. **Cumplido con las dos tablas** —
+`global-vs-baselines-real-2026-08-06.md` y `-sintetico-2026-08-07.md`. **367 tests**, `ruff`
+limpio, **13/13 mutaciones caen**.
 
 ### 6.8 Evaluación de cierre de M2 (2026-08-06)
 
@@ -1434,10 +1474,12 @@ gruesa, no un ruteo teórico. Antes de adoptarlo hay que medirlo con regla prosp
 
 #### 6. Lo que M2 deja abierto
 
-- **Tres decisiones para el PM/Analista, y son la misma** (`planning/roadmap.md`): sesgo por
-  horizonte (ADR-015 con su evidencia corregida), cobertura del intervalo por cuadrante
-  (M2.4), y precisión del punto por cuadrante (M2.5). Las tres dicen que **un número único de
-  precisión no describe lo que el usuario va a ver**. Conviene resolverlas juntas.
+- **Las tres decisiones que estaban abiertas para el PM se consolidaron en una: ADR-018**
+  (2026-08-06), que **reemplaza a ADR-015**. Eran la misma pregunta desde tres lados —sesgo por
+  horizonte, cobertura del intervalo, precisión del punto— y las tres se contestan igual: **el
+  eje de variación no es el horizonte, es el cuadrante** (4 a 9 veces contra 1,1). Antes de
+  escalarlas se verificó que no fueran un bug reparable: **no lo son** (§6.9). Queda **una** fila
+  de ratificación en `planning/roadmap.md` en vez de cuatro.
 - **ADR-011 (IPC) sigue en `Propuesta`** y es la única dependencia externa del motor.
 - **El peldaño laboratorio de la deflación lo usa 1 producto de 2.128**: los datos reales no lo
   ejercitan (§6.2).
@@ -1458,6 +1500,70 @@ gruesa, no un ruteo teórico. Antes de adoptarlo hay que medirlo con regla prosp
   porque el gate lo pidiera. En M2.5 el desagregado por cuadrante fue parte del diseño desde el
   principio, y por eso el resultado se vio antes de congelar nada. **El desagregado no es un
   extra del reporte: es el reporte.**
+- **Se escalaron tres decisiones al PM antes de verificar si eran decisiones.** Una de ellas
+  —"¿el compromiso de cobertura se expresa por cuadrante?"— podía en principio no ser una
+  decisión sino un bug de calibración. Averiguarlo costó **minutos**, porque los checkpoints
+  estaban en disco (§6.9). **Se hizo tarde, después de haberla mandado dos veces al roadmap del
+  PM.** La regla que queda: antes de escalar, gastar los minutos en comprobar que el problema
+  no sea propio.
+
+### 6.9 Se intentó calibrar el intervalo por post-proceso y no alcanza (2026-08-06)
+
+**Por qué se midió.** M2.4 dejó `erratica` sub-cubriendo 10 a 13 puntos y eso quedó como decisión
+del PM. Antes de mandarle una decisión, correspondía preguntarse si el motor podía **arreglarlo**
+en vez de documentarlo: la sub-cobertura de un intervalo es, en principio, un defecto de
+calibración, y la calibración se corrige por post-proceso sin tocar el modelo. Costo de averiguarlo:
+minutos, porque los cuantiles ya están en los checkpoints de M2.4 y **no hay que reajustar nada**
+— el mismo truco que abarató M2.5.
+
+**Qué se probó.** Calibración conformal CQR (Romano et al. 2019) con la regla de observabilidad de
+ADR-016: score de conformidad `s = max(P10 − y, y − P90)`, y para el corte `t` el ajuste
+`q` es el cuantil 0,80 de los scores de las filas **cuyo mes objetivo ya ocurrió** (`anio_mes <= t`).
+El intervalo calibrado es `[P10 − q, P90 + q]`; con `q` negativo el intervalo **encoge**, que es lo
+que necesitan `intermitente` y `lumpy`. Se probaron dos granos de calibración: por `cuadrante` y por
+`(cuadrante, horizonte)`.
+
+**Resultado — cobertura empírica contra el 0,80 nominal, calibrando por `(cuadrante, horizonte)`:**
+
+| cuadrante | h=1 | h=3 | h=6 | h=12 |
+|---|---|---|---|---|
+| `erratica` sin calibrar | 0,679 | 0,699 | 0,677 | 0,670 |
+| `erratica` **calibrada** | **0,787** | 0,758 | 0,722 | **0,670** |
+| `suave` sin calibrar | 0,782 | **0,801** | **0,801** | 0,799 |
+| `suave` **calibrada** | 0,784 | 0,770 | 0,776 | 0,799 |
+| `intermitente` calibrada | 0,857 | 0,923 | 0,911 | 0,907 |
+
+**Tres conclusiones, y las tres son negativas para el post-proceso:**
+
+1. **En `erratica` funciona a horizonte corto y se apaga con el horizonte.** +10,8 puntos a h=1,
+   +5,9 a h=3, +4,5 a h=6 y **cero a h=12**. La razón es la regla de observabilidad y no la técnica:
+   para calibrar el horizonte 12 en el corte `t` hacen falta predicciones emitidas en `t−12` cuyo mes
+   ya ocurrió, y de esas hay muy pocas. **Calibrar horizonte largo prospectivamente es un problema de
+   datos, no de método** — y aflojar la regla sería mirar el futuro, que es lo que ADR-016 cerró.
+2. **En `intermitente` es imposible, y es estructural.** El **81,4%** de sus filas tiene `real == 0`
+   **y** `P10 == 0` a la vez, así que su score de conformidad es exactamente `0`. El cuantil 0,80 de
+   una distribución con un átomo del 81% en cero **es cero**: `q = 0,0000` y el intervalo no se mueve.
+   No hay ajuste aditivo que encoja un intervalo cuando la mayoría de las observaciones caen justo en
+   su borde. Es consecuencia directa de la densificación a ceros de ADR-010 — correcta y necesaria
+   para medir — combinada con un P10 que, bien, predice cero.
+3. **En `suave`, donde ya calibraba, empeora** (0,801 → 0,770 a h=3). El `q` estimado con la poca
+   evidencia observable es ruidoso, y aplicarlo donde no hacía falta mete ese ruido.
+
+**Consecuencia.** La dispersión de cobertura entre cuadrantes **no es un defecto reparable por
+post-proceso**: es la señal de que unas series son intrínsecamente menos predecibles que otras. Eso
+convierte la pregunta del PM de "¿cómo arreglamos esto?" en "¿cómo lo comunicamos?", y es lo que
+resuelve **ADR-018**. Si algún día se quiere cerrar la brecha de `erratica`, hay que atacarla **en el
+modelo** —features de volatilidad, o un modelo de dispersión aparte—, no después.
+
+**No se abre unidad de trabajo.** `erratica` es el 11% de los productos y el 13% del volumen, la
+mejora disponible a horizonte corto es de ~10 puntos de cobertura, y a horizonte largo —donde el
+intervalo es el entregable según ADR-018— **no hay mejora**. Queda anotado en §12 como deuda con su
+número, para que la decisión de retomarlo se tome con el costo a la vista y no de memoria.
+
+> **Lo que este experimento vale más allá del resultado:** costó minutos porque los checkpoints
+> seguían en disco. Una pregunta de diseño —"¿esto se arregla o se documenta?"— se respondió con
+> medición en vez de con opinión, y el "no" quedó con su razón. **Antes de escalar una decisión,
+> conviene gastar los minutos en verificar que sea de verdad una decisión y no un bug.**
 
 ## 7. M3 — Jerarquía, cliente y segmentos · S9–S12
 
@@ -1562,6 +1668,27 @@ gruesa, no un ruteo teórico. Antes de adoptarlo hay que medirlo con regla prosp
 **Cómo levantar el entorno y regenerar el dataset:** `motor/README.md` §Arranque desde cero.
 El dataset sintético **no está en el repo**, así que ninguna validación a escala corre en un
 clon nuevo hasta regenerarlo.
+
+### 12.0 La sub-cobertura del intervalo en `erratica` (abierta, con costo medido)
+
+El intervalo P10–P90 sub-cubre **10 a 13 puntos** en el cuadrante `erratica`, en los cuatro
+horizontes (M2.4, §6.6). **No se repara por post-proceso: se midió** (§6.9) — la calibración
+conformal prospectiva recupera ~10 puntos a h=1 y **cero a h=12**, porque a doce meses vista casi
+no hay error ya observado con el que calibrar sin violar ADR-016.
+
+**Por qué no se abrió unidad de trabajo:** `erratica` es el **11% de los productos** y el **13%
+del volumen**; la mejora disponible está en horizonte corto, donde el entregable comprometido es
+el **punto** y no el intervalo (ADR-018 punto 1), y en horizonte largo —donde el intervalo *sí*
+es el entregable— no hay mejora disponible por esta vía.
+
+**Si se retoma, hay que atacarlo en el modelo, no después:** features de volatilidad de la propia
+serie, o un modelo de dispersión separado del de nivel. Y antes de invertir, medir cuánto de la
+sub-cobertura es irreducible: `erratica` está definida justamente por tener CV alto con demanda
+frecuente, así que parte de esa brecha puede ser la varianza real del negocio.
+
+⚠️ **Lo que NO hay que hacer es ensanchar el intervalo a mano hasta que dé 0,80.** Eso lo pone
+lindo en la tabla y le miente al usuario en la dirección contraria: un intervalo inflado sin
+sustento no informa riesgo, solo lo simula. ADR-018 punto 2 elige documentar el número real.
 
 ### 12.1 Deuda del generador sintético → **T0.4**
 
