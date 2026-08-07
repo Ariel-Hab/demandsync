@@ -2241,6 +2241,41 @@ Y una consecuencia que caía fuera de lo que esta sección preveía: **el sub-pr
 horizonte largo del piso era en su mayor parte del criterio de selección**, no de los
 baselines — lo que obliga a revisar ADR-015 antes de ratificarlo (ADR-016, punto 5).
 
+### 12.6 Tres trampas que deja M3.1a, y ninguna es sobre selección (2026-08-07)
+
+El resultado de M3.1a está en §7.1. Lo que va acá es lo que **sobrevive a la unidad** y va a
+volver a aparecer, porque ninguna de las tres es sobre elegir modelos.
+
+**1. Una cota calculada con hindsight no es un techo conservador: es otra cantidad.** §6.8
+punto 5 estimó 8,7% / 7,9% / 4,9% / 2,3% tomando, por cuadrante, el mejor de la tabla final.
+Prospectivamente eso dio **+1,5% en un horizonte y negativo en tres**. El error de lectura no
+fue el número sino la categoría: la cota medía *"cuánto ganarías si supieras cuál va a ganar"*
+y se usó para dimensionar *"cuánto vas a ganar"*. Son preguntas distintas, y la segunda puede
+dar negativa con la primera bien alta. **Regla: toda cota con hindsight se escribe con su
+etiqueta pegada y no se usa para decidir prioridades sin medir la versión prospectiva.** La
+buena noticia es que medirla costó 137 s.
+
+**2. Agrupar decisiones no reduce la varianza: la correlaciona.** La intuición era que 4-5
+decisiones con mucha evidencia serían más estables que 2.100 con poca. Las decisiones **sí**
+resultaron más estables — y el resultado empeoró igual, porque cada error pasó a arrastrar el
+86% del peso en vez de una serie. Aplica a cualquier cosa que en M3 quiera decidir a grano
+grueso (segmento en M3.3, prior de cliente nuevo en M3.4): **antes de agrupar, preguntá qué
+fracción del resultado se mueve cuando el grupo se equivoca una vez.**
+
+**3. El criterio con el que se elige y la métrica con la que se juzga tienen que ponderar
+igual.** Se rankea por **MASE**, que pesa todas las series por igual, y el gate es **WAPE**,
+que pesa por magnitud. Por serie el desajuste es inocuo: cada decisión afecta solo a su serie.
+Agrupando deja de serlo — el MASE elige el modelo bueno para la serie *típica* del grupo, que
+es chica, y se lo aplica a las grandes que deciden el WAPE. Los dos indicios están en §7.1
+punto 4 (`GlobalLGBM` no gana `suave` en ninguno de los 18 cortes pese a ser el mejor ahí por
+WAPE; `AutoARIMA` gana `intermitente` 17 de 18 y rinde peor que por serie). **Es diagnóstico,
+no medición** — queda como el único intento abierto, con su gate ya escrito.
+
+> **Esta tercera es la que hay que tener a mano en M3.1.** La reconciliación jerárquica
+> también combina niveles con pesos, y MinT los pondera por covarianza de residuos, no por
+> magnitud. Si el criterio de reconciliación y el gate no ponderan igual, el mismo modo de
+> falla reaparece con otra cara.
+
 ## 13. Fuera de este track
 
 Deep learning (LSTM/transformers), pronóstico intra-mensual, optimización de precios, demanda censurada por quiebres, clima como driver de precisión (queda como feature explicativa/mock — viabilidad §3.4, formalizado en **ADR-014**: el dato del MVP es mock por contrato §6, así que entrenar sobre él no puede producir señal; la estacionalidad de calendario de M2.2 captura la parte predecible a 12 meses. **Ojo con CU-09:** su plantilla de respuesta hoy cita el clima como causa de una recomendación, y eso hay que corregirlo antes de R4). Tampoco entra: re-deduplicar factura/remito (es del exportador del lado cliente desde 2026-07-15), reglas de abastecimiento (R3, backend), ni dashboard (R4, frontend).
