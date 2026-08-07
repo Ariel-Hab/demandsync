@@ -1881,14 +1881,26 @@ aceptación. Los niveles que ADR-008 mide (producto/categoría/total) no cambian
 
 #### Dos consecuencias de costo que conviene tener antes de prometer plazos
 
-**1. Bottom-up es gratis; MinT no.** Los checkpoints de M1.8/M2.3 tienen predicciones **solo
-a grano producto**. Bottom-up sale de sumarlas, sin reajustar nada, como M2.5. Pero MinT
-reconcilia *base forecasts de todos los niveles*, así que hay que **predecir las 296 series
-agregadas** (12+77+206+1) sobre los 18 cortes. Con el global es ~1 min; con los 7 baselines,
-~40 min extrapolando el costo por serie de §5.6.1. Es una **corrida nueva con su propio
-`--checkpoint-dir`**, no un cruce de checkpoints. (El `id` de corrida incluye la huella de
-datos y las series agregadas son otros datos, así que no puede colisionar con los de
-producto — pero el directorio propio es igual la práctica de §12.2.)
+**1. Bottom-up es gratis; MinT no — y costaba 20 veces más de lo estimado.** Los checkpoints
+de M1.8/M2.3 tienen predicciones **solo a grano producto**. Bottom-up sale de sumarlas, sin
+reajustar nada, como M2.5. Pero MinT reconcilia *base forecasts de todos los niveles*, así que
+hay que **predecir las 296 series agregadas** (12+77+206+1) sobre los 18 cortes: una **corrida
+nueva con su propio `--checkpoint-dir`**.
+
+> ⚠️ **La estimación de "~40 min" que estuvo escrita acá era errónea por un factor de 20, y el
+> motivo es instructivo.** Se extrapoló el costo por serie de §5.6.1, que se midió sobre series
+> de **producto**: dispersas y muchas cortas. Las series **agregadas** son densas y de 95 meses
+> sin huecos, y el costo de los `Auto*` escala con el largo de la serie. Medido sobre 6 series
+> agregadas reales: **8,78 s/serie/corte**, contra 0,58 del producto (§5.2) — **15x**. Los 7
+> candidatos sobre 296 series × 18 cortes son **13 horas**, no 40 minutos.
+> **Regla: el costo por serie no se extrapola entre niveles de la jerarquía.**
+
+**1b. Y el modelo caro se da vuelta según la forma de la serie.** §6.5 midió que a grano
+producto el cuello era `AutoARIMA`. Sobre las agregadas es **`AutoTheta`: 7,97 s/serie/corte
+contra 0,81 de `AutoARIMA`, el 89,7% del total.** Sacando solo a `AutoTheta` la corrida pasa de
+**13 h a 1,4 h**. Por eso `predecir_baselines` recibió un parámetro `modelos` **aditivo**
+(default = los 5 de siempre, ninguna tabla congelada se mueve): no es para tunear la lista de
+candidatos sino para poder dejar afuera uno cuyo costo se midió y no se puede pagar.
 
 **2. La covarianza de MinT hay que estimarla prospectivamente, y es la trampa fina de la
 unidad.** MinT pondera los niveles por la covarianza de los residuos. Estimarla con todos los
@@ -1909,6 +1921,23 @@ tiene que respetar la misma disciplina temporal que el que elige modelos.**
    `t` no puede mover la reconciliación de los cortes ≤ t.
 4. **Bottom-up vs MinT se decide con la tabla**, no por preferencia — y bottom-up es el
    piso a batir acá, porque es el que sale gratis.
+
+#### Defecto encontrado en M2.3, anotado y no arreglado acá
+
+`predecir_global` con `usar_precio=False` **promete** en su propio mensaje de error
+(`modelo_global.py:287`) que se puede correr sobre una historia sin `precio_prom`. No se
+puede: `_armar_entrenamiento` llama igual a `construir_features`, que ajusta la deflación y
+exige `precio_prom` **y** `revenue`. El mensaje manda al usuario a un camino que muere con un
+`KeyError` crudo tres marcos más abajo.
+
+Nadie lo había pisado porque los hechos reales siempre traen las dos columnas; lo destapó M3.1
+al querer correr el global sobre series **agregadas**, que no tienen precio —el precio de "la
+categoría CLINICO" no existe—. El arreglo es coherente con el propio diseño de
+`construccion.py`, que ya emite columnas en `NaN` cuando falta el catálogo (su docstring: *"las
+columnas salen igual, en NaN, para que el esquema no dependa del insumo"*), pero **toca un
+camino con tablas congeladas colgando y merece su propia verificación**, no colarse dentro de
+M3.1. Consecuencia mientras tanto: en los niveles agregados el base compite **sin
+`GlobalLGBM`**.
 
 ## 8. M4 — Empaquetado batch e integración · S13–S15
 

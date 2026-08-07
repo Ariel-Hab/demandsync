@@ -37,14 +37,32 @@ VENTANA_MEDIA_MOVIL = 3
 M1.5; la comparación real contra los demás baselines la hace M1.7 vía MASE."""
 
 
-def _modelos() -> list:
-    return [
-        SeasonalNaive(season_length=ESTACIONALIDAD),
-        WindowAverage(window_size=VENTANA_MEDIA_MOVIL),
-        AutoETS(season_length=ESTACIONALIDAD),
-        AutoTheta(season_length=ESTACIONALIDAD),
-        AutoARIMA(season_length=ESTACIONALIDAD),
-    ]
+def _modelos(nombres: list[str] | None = None) -> list:
+    """Los 5 baselines de M1.5, o el subconjunto que se pida.
+
+    **`nombres=None` devuelve los 5, que es el comportamiento de siempre**: el parámetro es
+    aditivo y ninguna corrida existente cambia. Se agregó en M3.1 (§7.2) porque el costo por
+    serie depende de la *forma* de la serie y a veces hay que dejar uno afuera con motivo
+    medido — ver el docstring de `predecir_baselines`.
+    """
+    todos = {
+        "SeasonalNaive": lambda: SeasonalNaive(season_length=ESTACIONALIDAD),
+        "WindowAverage": lambda: WindowAverage(window_size=VENTANA_MEDIA_MOVIL),
+        "AutoETS": lambda: AutoETS(season_length=ESTACIONALIDAD),
+        "AutoTheta": lambda: AutoTheta(season_length=ESTACIONALIDAD),
+        "AutoARIMA": lambda: AutoARIMA(season_length=ESTACIONALIDAD),
+    }
+    if nombres is None:
+        return [construir() for construir in todos.values()]
+
+    desconocidos = sorted(set(nombres) - set(todos))
+    if desconocidos:
+        raise ValueError(
+            f"Baselines desconocidos: {desconocidos}. Disponibles: {sorted(todos)}"
+        )
+    # Se respeta el orden canónico y no el del argumento, para que dos llamadas con los
+    # mismos modelos en distinto orden produzcan columnas idénticas.
+    return [construir() for nombre, construir in todos.items() if nombre in set(nombres)]
 
 
 def predecir_baselines(
@@ -55,6 +73,7 @@ def predecir_baselines(
     columna_fecha: str = "anio_mes",
     columna_objetivo: str = "unidades",
     n_jobs: int = 1,
+    modelos: list[str] | None = None,
 ) -> pd.DataFrame:
     """Predictor M1.5 — conforme al contrato `PredictorFn` de `motor.backtesting.arnes`.
 
@@ -64,15 +83,26 @@ def predecir_baselines(
     saber hasta dónde llega `historia`, que ya viene recortada por el arnés — está en la
     firma porque el contrato de `PredictorFn` lo exige para todo predictor.
 
+    Args:
+        modelos: subconjunto de baselines a correr. **`None` corre los 5, que es el
+            comportamiento de siempre** — el parámetro es aditivo y no mueve ninguna tabla
+            congelada.
+
     `n_jobs` en 1 por defecto: subilo para correr a escala. Medido contra el dataset
     real, `AutoARIMA` cuesta ~2,9s por producto y `AutoTheta` ~1,6s — en serie, a 2.300
     productos x 18 cortes es inviable. Es una preocupación de quien corra M1.7/M1.8, no
     de este módulo, pero el parámetro queda expuesto desde ya para no tener que tocar la
     firma después.
-    """
+
+    **El modelo caro depende de la forma de la serie, y eso sorprendió en M3.1 (§7.2).**
+    Sobre las series de producto —dispersas y muchas cortas— el cuello es `AutoARIMA`
+    (§6.5). Sobre las **series agregadas** —densas, 95 meses sin huecos— el reparto se da
+    vuelta: `AutoTheta` se lleva el **89,7%** del tiempo (7,97 s/serie/corte contra 0,81 de
+    `AutoARIMA`). Por eso existe `modelos`: no para tunear la lista de candidatos, sino para
+    poder dejar afuera uno cuyo costo se midió y no se puede pagar."""
     solo_serie = historia[[columna_id, columna_fecha, columna_objetivo]]
     sf = StatsForecast(
-        models=_modelos(),
+        models=_modelos(modelos),
         freq="MS",
         n_jobs=n_jobs,
         fallback_model=SeasonalNaive(season_length=1),
