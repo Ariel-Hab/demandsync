@@ -25,24 +25,33 @@ Contrato de las tres piezas:
    productos × 18 cortes × 12 horizontes) un `.apply` fila a fila sería el cuello de
    botella, no los modelos.
 
-**Dos criterios de selección, y no se mezclan (M1.9, ADR-016).**
+**Tres criterios de selección, y no se mezclan (M1.9/ADR-016 y M3.1a).**
 
 - `elegir_mejor_por_serie` → un ganador **por serie**, con el MASE de *todos* los cortes.
   Reproduce el piso retrospectivo ya congelado.
 - `elegir_mejor_por_corte` → un ganador **por (serie, corte)**, con el error que a esa
   altura ya se había observado. Es el piso contra el que se mide M2.
+- `elegir_mejor_por_cuadrante` → un ganador **por (cuadrante, corte)**, con la misma regla
+  de observabilidad. Menos grados de libertad: ~4-5 decisiones por corte en vez de ~2.100.
 
 El primero es retrospectivo: elige el modelo de cada serie con información posterior a las
 filas donde después se lo mide. Sirve como referencia fuerte, pero **el piso que produce
 está inflado dos veces** — por el privilegio del hindsight y porque le baja la cobertura
 (§5.6.1 punto 5). El segundo es el que hace comparables al piso y al global de M2.5, y va
 acompañado de `armar_reporte_con_cascada`, que es la mitad que repara la cobertura.
+
+El tercero ataca lo que el segundo cuesta: reelegir por serie en cada corte es decidir con
+poca evidencia cada vez, y eso se paga en varianza de selección — en `suave` el champion de
+M2.5 es **peor que el global solo** (0,2954 contra 0,2654 a h=1, §6.8 punto 5). Los tres
+devuelven **el mismo formato**, así que `armar_reporte_con_cascada` y todo lo de abajo son
+indistintos a cuál se usó: lo único que cambia es con cuánta evidencia se rankeó.
 """
 
 import numpy as np
 import pandas as pd
 
 from ..backtesting.metricas import mase
+from ..clasificacion import SIN_ACTIVIDAD, clasificar_por_corte
 from .baselines import predecir_baselines
 from .intermitentes import predecir_intermitentes
 
@@ -301,6 +310,173 @@ def _ranking_de_un_corte(
     )
 
 
+def elegir_mejor_por_cuadrante(
+    reporte: pd.DataFrame,
+    train_df: pd.DataFrame,
+    modelos: list[str] | None = None,
+    estacionalidad: int = 12,
+    cuadrantes: pd.DataFrame | None = None,
+    columna_id: str = "id_producto",
+    columna_fecha: str = "anio_mes",
+    columna_corte: str = "corte",
+    columna_cuadrante: str = "cuadrante",
+    modelo_fallback: str = FALLBACK_SIN_MASE,
+) -> pd.DataFrame:
+    """Selección por **`(cuadrante, corte)`**: un ranking por cuadrante de intermitencia,
+    difundido a todas las series de ese cuadrante (M3.1a, `roadmap-motor.md` §7.1).
+
+    Misma regla de observabilidad que `elegir_mejor_por_corte` —en el corte `t` solo entra
+    el error con `columna_fecha <= t`— y **mismo formato de salida**, largo y con el orden
+    completo: `columna_id`, `columna_corte`, `modelo`, `rango`. Eso es deliberado y es lo
+    que hace barata la unidad: `armar_reporte_con_cascada`, `resumen_de_cascada` y las
+    comparaciones de `backtesting.comparacion` no distinguen de dónde salió el ranking.
+
+    **Qué cambia, entonces.** Solo con cuánta evidencia se rankea: el MASE se promedia
+    sobre todas las series del cuadrante en vez de sobre una sola. Son ~4-5 decisiones por
+    corte en lugar de ~2.100, y la hipótesis de M3.1a es que la varianza que eso ahorra vale
+    más que la especificidad que pierde — el champion de M2.5 es peor que el global solo
+    justo en `suave`, el cuadrante que carga el 86% del peso.
+
+    **El ranking es por cuadrante; la cascada sigue siendo por serie.** Poder cubrir una
+    celda es propiedad de cada serie, no de su cuadrante (un producto con 2 meses de
+    historia no lo cubre `SeasonalNaive` sea cual sea su cuadrante), así que
+    `armar_reporte_con_cascada` baja al siguiente candidato **del ranking de ese cuadrante**
+    cuando el elegido no predijo. Sin eso la cobertura no iguala a la del piso y la
+    comparación fila a fila de M2.5 deja de valer.
+
+    **El cuadrante se toma al corte, no al final.** `cuadrantes` viene de
+    `clasificacion.clasificar_por_corte`, que clasifica con `hasta=corte`. Acá el cuadrante
+    deja de ser un eje de reporte y pasa a ser parte de la decisión, así que el default de
+    `clasificar_series` (último mes de los datos) dejaría al ranking mirando el futuro — la
+    trampa de §12.2. Si no se pasa, se calcula acá una sola vez para todos los cortes.
+
+    **`sin_actividad` es un grupo más, no un caso especial.** Es la etiqueta de una serie
+    que al corte todavía no vendió nada, y son muchas al principio del backtest. Se le
+    aprende su propio ranking en vez de mandarla al fallback: meterle una regla fija sería
+    reintroducir por la ventana el enrutamiento por teoría que M1.7 midió que era peor.
+    Grupos sin ningún MASE definido —el primer corte, donde no hay nada observado— sí caen
+    al orden fijo de `modelo_fallback`, igual que en la selección por serie.
+    """
+    modelos = list(modelos) if modelos else list(CANDIDATOS)
+    _validar_fallback(modelos, modelo_fallback)
+    orden_sin_mase = _orden_sin_mase(modelos, modelo_fallback)
+
+    cortes = [pd.Timestamp(corte) for corte in sorted(reporte[columna_corte].dropna().unique())]
+    if not cortes:
+        return pd.DataFrame(
+            {columna_id: [], columna_corte: [], "modelo": [], "rango": []}
+        ).astype({"modelo": object, "rango": int})
+
+    if cuadrantes is None:
+        cuadrantes = clasificar_por_corte(
+            train_df,
+            cortes,
+            columnas_id=[columna_id],
+            columna_fecha=columna_fecha,
+            columna_corte=columna_corte,
+        )
+    mapas = _mapas_de_cuadrante(cuadrantes, cortes, columna_id, columna_corte, columna_cuadrante)
+
+    rankings = [
+        _ranking_de_un_corte_por_cuadrante(
+            reporte, corte, train_df, modelos, orden_sin_mase, estacionalidad,
+            mapas[corte], columna_id, columna_fecha, columna_corte,
+        )
+        for corte in cortes
+    ]
+    return pd.concat(rankings, ignore_index=True)
+
+
+def _mapas_de_cuadrante(
+    cuadrantes: pd.DataFrame,
+    cortes: list[pd.Timestamp],
+    columna_id: str,
+    columna_corte: str,
+    columna_cuadrante: str,
+) -> dict[pd.Timestamp, dict]:
+    """`{corte: {serie: cuadrante}}`, validando que estén todos los cortes que se van a usar.
+
+    Corta si falta alguno en vez de tratarlo como "sin clasificar": un corte ausente daría
+    un ranking construido sobre un único grupo `sin_actividad` —silenciosamente, con
+    números plausibles— y eso es indistinguible de un resultado real al leer la tabla.
+    """
+    faltantes = sorted(set(cortes) - set(pd.to_datetime(cuadrantes[columna_corte]).unique()))
+    if faltantes:
+        raise ValueError(
+            f"`cuadrantes` no cubre {len(faltantes)} de los {len(cortes)} cortes del reporte "
+            f"(el primero es {faltantes[0].date()}). Se calcula con "
+            "`clasificacion.clasificar_por_corte` sobre los mismos cortes."
+        )
+    return {
+        pd.Timestamp(corte): dict(
+            zip(grupo[columna_id], grupo[columna_cuadrante], strict=True)
+        )
+        for corte, grupo in cuadrantes.groupby(columna_corte, observed=True)
+    }
+
+
+def _ranking_de_un_corte_por_cuadrante(
+    reporte: pd.DataFrame,
+    corte: pd.Timestamp,
+    train_df: pd.DataFrame,
+    modelos: list[str],
+    orden_sin_mase: list[str],
+    estacionalidad: int,
+    cuadrante_de_serie: dict,
+    columna_id: str,
+    columna_fecha: str,
+    columna_corte: str,
+) -> pd.DataFrame:
+    """El ranking de un corte, rankeando por cuadrante y difundiendo a sus series."""
+    series = pd.Index(
+        reporte.loc[reporte[columna_corte] == corte, columna_id].unique(), name=columna_id
+    )
+    grupo_de_serie = np.array(
+        [cuadrante_de_serie.get(serie, SIN_ACTIVIDAD) for serie in series], dtype=object
+    )
+    # `sorted` y no el orden de aparición: el ranking tiene que ser determinístico y no
+    # depender de en qué orden vinieron las filas del reporte.
+    grupos = pd.Index(sorted(set(grupo_de_serie)), name="cuadrante")
+
+    # La misma regla que `_ranking_de_un_corte`: solo el error cuyo mes objetivo ya ocurrió.
+    observable = reporte[reporte[columna_fecha] <= corte]
+
+    if observable.empty:
+        medio = pd.DataFrame(np.nan, index=grupos, columns=modelos)
+    else:
+        por_corte = mase(
+            observable,
+            modelos=modelos,
+            train_df=train_df,
+            estacionalidad=estacionalidad,
+            columna_id=columna_id,
+            columna_fecha=columna_fecha,
+            columna_corte=columna_corte,
+        )
+        # El cuadrante con el que se agrupa es el de ESTE corte —el punto de decisión—, no
+        # el que la serie tenía en el corte donde se observó cada error.
+        del_grupo = por_corte[columna_id].map(cuadrante_de_serie).fillna(SIN_ACTIVIDAD)
+        medio = por_corte.groupby(del_grupo, observed=True)[modelos].mean().reindex(grupos)
+
+    valores = medio.to_numpy(dtype=float)
+    sin_mase = np.isnan(valores).all(axis=1)
+    orden = np.argsort(np.where(np.isnan(valores), np.inf, valores), axis=1, kind="stable")
+    orden[sin_mase] = [modelos.index(modelo) for modelo in orden_sin_mase]
+
+    fila_de_grupo = {grupo: i for i, grupo in enumerate(grupos)}
+    orden_por_serie = orden[[fila_de_grupo[grupo] for grupo in grupo_de_serie]]
+
+    n_series, n_modelos = orden_por_serie.shape
+    return pd.DataFrame(
+        {
+            columna_id: np.repeat(series.to_numpy(), n_modelos),
+            columna_corte: corte,
+            "modelo": np.asarray(modelos, dtype=object)[orden_por_serie.ravel()],
+            "rango": np.tile(np.arange(n_modelos), n_series),
+        }
+    )
+
+
 def armar_reporte_seleccionado(
     reporte: pd.DataFrame,
     ganadores: pd.DataFrame,
@@ -491,6 +667,56 @@ def estabilidad_de_la_seleccion(
     distribucion = distribucion.sort_values("cambios").reset_index(drop=True)
     distribucion["%"] = (distribucion["n_series"] / distribucion["n_series"].sum() * 100).round(1)
     return distribucion
+
+
+def ganadores_de_cuadrante(
+    ranking: pd.DataFrame,
+    cuadrantes: pd.DataFrame,
+    columna_id: str = "id_producto",
+    columna_corte: str = "corte",
+    columna_cuadrante: str = "cuadrante",
+) -> pd.DataFrame:
+    """Qué modelo ganó cada `(cuadrante, corte)`: `corte` × cuadrante → nombre del modelo.
+
+    Es la lectura que hace interpretable a M3.1a, y la razón por la que la unidad se planteó
+    como algo más que un número. §6.8 punto 5 afirma que la estructura existe —"`suave`
+    siempre el global; los tres cuadrantes irregulares casi siempre el P50"— pero lo afirma
+    **con hindsight**, tomando el mejor de la tabla final. Esta tabla lo muestra tal como lo
+    fue eligiendo la regla prospectiva, corte por corte: si el ganador de un cuadrante salta
+    de modelo todo el tiempo, la hipótesis de "dos regímenes" no se sostiene por más que el
+    WAPE agregado mejore.
+
+    Toma el `ranking` ya difundido a series (el que devuelve `elegir_mejor_por_cuadrante`) y
+    lo colapsa de nuevo a grupos. Se hace así, y no devolviendo el ranking por grupo desde la
+    selección, para que la tabla describa **lo que efectivamente se aplicó** a las filas del
+    reporte y no una intención previa.
+    """
+    ganadores = ranking[ranking["rango"] == 0]
+    etiquetado = ganadores.merge(
+        cuadrantes[[columna_corte, columna_id, columna_cuadrante]],
+        on=[columna_corte, columna_id],
+        how="left",
+    )
+    etiquetado[columna_cuadrante] = etiquetado[columna_cuadrante].fillna(SIN_ACTIVIDAD)
+
+    tabla = (
+        etiquetado.groupby([columna_corte, columna_cuadrante], observed=True)["modelo"]
+        .agg(["first", "nunique"])
+        .reset_index()
+    )
+    # Todas las series de un grupo comparten ranking por construcción; si no, la tabla
+    # estaría promediando dos decisiones distintas bajo una sola etiqueta.
+    inconsistentes = tabla[tabla["nunique"] > 1]
+    if not inconsistentes.empty:
+        raise ValueError(
+            f"{len(inconsistentes)} pares (cuadrante, corte) tienen más de un ganador: el "
+            "ranking no se difundió por grupo. Revisá `elegir_mejor_por_cuadrante`."
+        )
+    return (
+        tabla.pivot(index=columna_corte, columns=columna_cuadrante, values="first")
+        .reset_index()
+        .rename_axis(columns=None)
+    )
 
 
 def resumen_de_ganadores(

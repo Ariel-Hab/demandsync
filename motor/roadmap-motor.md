@@ -1660,7 +1660,7 @@ hipótesis se rechaza.** **372 tests**, `ruff` limpio.
 | # | Unidad de trabajo | Semana | Entregable / gate |
 |---|---|---|---|
 | **M3.0** | **Features de dispersión** (`RollingStd` y CV sobre las ventanas 3/6/12 ya existentes), para cerrar la sub-cobertura del intervalo en `erratica`. **Unidad agregada el 2026-08-07 con su motivo, no estaba en el plan original** (§6.10): el diagnóstico de M2.4/M2.5 es que `erratica` se distingue de `suave` **únicamente por el CV²**, y la especificación de features de M2.2 no tiene **ninguna** medida de dispersión — solo `RollingMean`. El modelo no puede diferenciarlas. La evidencia lo respalda: donde el régimen **sí** es visible (ADI, que se ve como ceros en los lags) el modelo ensancha el intervalo hasta 13x, y a `erratica` le da la **misma anchura relativa que a `suave`**. Va antes de M3.1 porque cambiar features después obliga a rehacer la reconciliación | S9 | **Gate:** re-medir la cobertura empírica **por cuadrante** contra `intervalos-global-real-2026-08-06.md` (misma corrida, comparación fila a fila) **y** verificar que el WAPE del punto **no empeore** a ningún horizonte. Interruptor `usar_dispersion`, apagado por defecto hasta que la tabla decida — así las tablas congeladas de M2 siguen reproduciéndose. Si no cierra la brecha, la alternativa medida es **cuantiles ajustados por cuadrante**, que queda registrada acá y no se hace antes de tener este número. **❌ CERRADA 2026-08-07 con resultado NEGATIVO — la hipótesis se rechaza (§6.10).** En `erratica` compra entre 0,1 y 2,3 puntos contra una brecha de 10 a 13, y **derrumba `intermitente`/`lumpy` a h=1** (cobertura 0,857 → 0,386 y 0,709 → 0,393): las features le dieron señal al modelo para levantar el P10 por encima de cero justo donde cero era lo correcto — el `P10 == 0` exacto cae del 82,1% al 31,4% de las filas. El punto además empeora en 2 de 4 horizontes. **La dispersión ya era inferible de los lags**, así que no era un problema de información. `usar_dispersion` queda en `False`; el código, sus tests y la tabla se conservan para que el resultado negativo sea reproducible |
-| **M3.1a** | **Selección por `(cuadrante, corte)`** en vez de por `(serie, corte)` — **precondición de M3.1**. Unidad agregada el 2026-08-07 con su motivo en **§7.1**: es la palanca que §6.8 punto 5 dejó medida y sin usar (cota **2,3%–8,7%**, más que todo lo que compró M2), y va **antes** de la reconciliación porque cambia los pronósticos base que M3.1 consume — reconciliar primero y cambiar la selección después es rehacer M3.1 | S9 | Ranking por cuadrante con la regla prospectiva de ADR-016 (`hasta=corte` para clasificar, error con `anio_mes <= corte`), **cascada por serie**, y tabla congelada `backtests/seleccion-por-cuadrante-real-<fecha>.md` cruzada **fila a fila** contra la de M2.5 (mismo `id` `a79a9b23676b`, sin reajustar modelos). **Gate y criterio de promoción declarados antes de medir en §7.1**; si no los cumple se cierra en negativo como M3.0 |
+| **M3.1a** | **Selección por `(cuadrante, corte)`** en vez de por `(serie, corte)` — **precondición de M3.1**. Unidad agregada el 2026-08-07 con su motivo en **§7.1**: es la palanca que §6.8 punto 5 dejó medida y sin usar (cota **2,3%–8,7%**, más que todo lo que compró M2), y va **antes** de la reconciliación porque cambia los pronósticos base que M3.1 consume — reconciliar primero y cambiar la selección después es rehacer M3.1 | S9 | Ranking por cuadrante con la regla prospectiva de ADR-016 (`hasta=corte` para clasificar, error con `anio_mes <= corte`), **cascada por serie**, y tabla congelada `backtests/seleccion-por-cuadrante-real-<fecha>.md` cruzada **fila a fila** contra la de M2.5 (mismo `id` `a79a9b23676b`, sin reajustar modelos). **Gate y criterio de promoción declarados antes de medir en §7.1**; si no los cumple se cierra en negativo como M3.0. **❌ CERRADA 2026-08-07 con resultado NEGATIVO (§7.1):** gana h=1 (**0,3182** contra 0,3230) y **pierde h=3/6/12** (+7,4% / +6,0% / +4,1%), con el sesgo total a h=6 en **−0,0600, fuera del ±5%**. La cota de §6.8 punto 5 era hindsight y no se realizó. **Agrupar no reduce la varianza de selección: la correlaciona** — el ganador de `suave` cambia 7 veces en 18 cortes y cada cambio mueve el 86% del peso. `elegir_mejor_por_cuadrante` queda en el paquete, sin llamadores por defecto |
 | **M3.1** | Reconciliación total → categoría → laboratorio → producto con `hierarchicalforecast`; bottom-up vs MinT **elegido por backtest**, no por preferencia | S9 | Forecasts coherentes; ganancia por nivel documentada |
 | **M3.2** | Nivel cliente×producto: **P(compra en h)** (clasificación binaria LightGBM, mismas features) + tamaño esperado condicional. Es el output honesto: solo ~12% de los 319k pares tiene ≥12 meses de señal (EDA §5). **Recibe `CLIENTE_FEATURE`, diferida acá desde M2.2** (§6.3) | S10–S11 | Ranking de propensión; alimenta venta cruzada y redistribución (R3). **Dos precondiciones que hay que resolver acá y no antes:** (a) el **extract real no tiene cliente×producto** — o se extiende `extraer_snap.py` (túnel SSH, ~319k pares × 96 meses, mucho más pesado que lo de hoy) o M3.2 se valida solo en sintético, y eso se decide con el número de costo en la mano; (b) el generador **no modela altas ni bajas de cliente** (§12.1, deuda abierta de T0.4), así que hoy no ejercita el arranque en frío de un cliente nuevo — que es justo lo que pide M3.4 |
 | **M3.3** | Clustering RFM propio sobre montos **deflactados** (CP-INF-04), versionado por corrida; contraste contra la segmentación operacional DFV (CP-SEG-01); **etiquetado por arquetipos fijos** (ver diseño abajo) + **composición diagnóstica** por cluster | S11 | Matriz de contingencia cluster × `segmento_operacional`; `cluster_id` **no** entra como feature (ADR-005); cada cluster muestra etiqueta legible estable entre corridas y su top categoría/producto/laboratorio |
@@ -1778,6 +1778,76 @@ ADR-015.
 **Si el resultado es negativo se cierra en negativo**, como M3.0, con la tabla conservada para
 que sea reproducible, y se sigue directo a M3.1. El costo de averiguarlo es de horas.
 
+#### ❌ Resultado (2026-08-07) — el gate no se cumple: gana h=1 y pierde los otros tres
+
+Corrida `a79a9b23676b`, las mismas **305.309 filas** que M2.5, **137,5 s** y cero modelos
+reajustados. Tabla en [`backtests/seleccion-por-cuadrante-real-2026-08-07.md`](backtests/seleccion-por-cuadrante-real-2026-08-07.md).
+
+**El control de comparabilidad pasa primero:** el `champion` recalculado acá reproduce
+**exacto** los números de M2.5 (0,3230 / 0,3667 / 0,3928 / 0,3644) y el `piso` los suyos
+(0,3305 / 0,3767 / 0,4001 / 0,3699), con la columna `cobertura` idéntica fila a fila. La
+diferencia que sigue es atribuible al criterio de selección y a nada más.
+
+| h | champion `(serie, corte)` | champion `(cuadrante, corte)` | Δ |
+|---|---|---|---|
+| 1 | 0,3230 | **0,3182** | **−1,5%** ✅ |
+| 3 | 0,3667 | 0,3940 | +7,4% ❌ |
+| 6 | 0,3928 | 0,4164 | +6,0% ❌ |
+| 12 | 0,3644 | 0,3795 | +4,1% ❌ |
+
+**No se adopta.** El gate pedía los cuatro horizontes (punto 4) y además el sesgo total a
+h=6 da **−0,0600, fuera del ±5%** de ADR-008. Falla por los dos lados. `usar` la selección
+por cuadrante queda como una función disponible que **nadie llama por defecto**: el camino
+de producción sigue siendo `elegir_mejor_por_corte`, y que el `champion` reproduzca M2.5 al
+cuarto decimal es la prueba de que no se movió nada.
+
+**1. La cota de §6.8 punto 5 era hindsight y se comportó como tal.** Prometía 8,66% / 7,91%
+/ 4,85% / 2,27%; lo prospectivo entrega **+1,5% en h=1 y negativo en el resto**. La cota
+medía *"si supieras qué modelo va a ganar cada cuadrante"*; la versión prospectiva tiene que
+adivinarlo, y ahí está todo el asunto. **Una cota con hindsight no es una estimación
+conservadora del resultado: es una cantidad distinta.**
+
+**2. El mecanismo: agrupar no reduce la varianza de selección, la correlaciona.** La tabla
+*Ganador por cuadrante y corte* muestra que el ganador de `suave` **cambia 7 veces en 18
+cortes** (AutoTheta → GlobalLGBM_P50 → TSB → …). Con selección por serie un cambio malo
+afecta a una serie; acá **mueve el 86% del peso de golpe**. La hipótesis era que 4-5
+decisiones con mucha evidencia serían más estables que 2.100 con poca — y las decisiones son
+más estables, pero **cada error pesa 1.200 veces más**. El agregado no mejora: se vuelve
+frágil.
+
+**3. Dónde sí gana es donde §6.8 lo predijo, y no alcanza para mover nada.** `lumpy` mejora
+**11% a h=1, 15% a h=3 y 9% a h=6** (1,0714 contra 1,2073; 1,3387 contra 1,5816; 1,8318
+contra 2,0069) — es el mejor resultado que ningún contendiente sacó ahí. Pero `lumpy` es el
+**0,33% del peso**, y `intermitente` empeora **22% a h=1 y 38% a h=12**. Los dos juntos son
+0,6%: el veredicto lo decide `suave`, otra vez.
+
+**4. La sospecha más concreta que deja, y no se probó acá: el criterio de ranking y el gate
+no ponderan igual.** Se rankea por **MASE**, que pesa todas las series del grupo por igual, y
+se mide por **WAPE**, que pesa por magnitud. Por serie el desajuste casi no importa —cada
+decisión afecta solo a su serie—; por grupo, el MASE elige el modelo bueno para la serie
+*típica* (chica) del cuadrante y después ese modelo se aplica a las series grandes que
+dominan el WAPE. Dos evidencias que lo respaldan: **`GlobalLGBM` (la media) no gana `suave`
+en ninguno de los 18 cortes** pese a ser el mejor modelo de ese cuadrante por WAPE (0,2654
+contra 0,2954 del champion), y **`AutoARIMA` gana `intermitente` en 17 de 18 cortes** —una
+decisión estabilísima— y aun así rinde peor ahí que la selección por serie. **Es diagnóstico,
+no medición:** aislarlo pide rankear por error ponderado por magnitud y volver a correr
+(~1 línea y 137 s). Queda anotado como el único intento que este negativo deja abierto; no se
+hizo acá porque cambiar el criterio después de ver la tabla y adoptarlo si gana es elegir la
+vara según el resultado, que es lo que el gate se declaró para evitar.
+
+**5. Y refuerza a M1.7 en vez de contradecirla.** El reparto lo muestra: la selección por
+cuadrante se concentra en 6 modelos y **nunca elige `CrostonSBA` ni `WindowAverage`**, que la
+selección por serie usa en **8.633** pares. M1.7 midió tres veces que ningún candidato domina
+y que la preferencia de modelo **no se ordena por cuadrante** (`CrostonSBA` gana más en
+`suave` que en `lumpy`). El cuadrante no es el eje sobre el que varía qué modelo conviene, y
+esta unidad lo confirma desde el otro lado: al forzar una decisión por cuadrante se pierde
+justamente la diversidad que M1.7 mostró que valía.
+
+**6. `sin_actividad` como grupo propio fue inocuo pero inerte.** Cae a `SeasonalNaive` en los
+18 cortes: son las altas de catálogo, que nunca tienen error observado con qué rankear. La
+decisión de tratarlo como grupo (§7.1) no hizo daño y tampoco hizo nada — el camino efectivo
+es el fallback.
+
 ## 8. M4 — Empaquetado batch e integración · S13–S15
 
 | # | Unidad de trabajo | Semana | Entregable / gate |
@@ -1813,7 +1883,7 @@ que sea reproducible, y se sigue directo a M3.1. El costo de averiguarlo es de h
 | — | **M2** | **Cierre de fase** | — | ✅ **2026-08-06 — gate cumplido (§6.7).** Evaluación en **§6.8**: la ganancia sobre el piso, medida en lo promocionable, es **1,5% a 2,6%** a grano producto (no el 10,66% del titular de M2.3, que era el global solo). Siete ADRs registrados, tres de ellos abiertos porque un número no cerraba. **La palanca más grande que queda:** seleccionar por `(cuadrante, corte)` en vez de por `(serie, corte)` — cota estimada con hindsight, **4,9% a 8,7%** |
 | S9 | M3 | **Features de dispersión** (unidad agregada 2026-08-07) | M3.0 | ❌ **2026-08-07 — CERRADA CON RESULTADO NEGATIVO (§6.10).** La hipótesis se rechaza: en `erratica` compra 0,1 a 2,3 puntos contra una brecha de 10 a 13 y **derrumba `intermitente`/`lumpy` a h=1** (el `P10 == 0` exacto cae del 82,1% al 31,4% de las filas). La dispersión ya era inferible de los lags. `usar_dispersion` queda en `False`; código, tests y tabla se conservan para que el negativo sea reproducible |
 | — | M3 | **Cierre de la deuda de `erratica`** | §12.0 | ✅ **2026-08-07 — es irreducible, medido.** Cobertura **dentro** de la muestra de entrenamiento 0,7782 contra **0,6790** a futuro (nominal 0,80): de los 12 puntos de brecha, **~2 son del modelo y ~10 son que la dispersión futura no está en el pasado de la serie**. Cuatro hipótesis descartadas con medición. No se abre unidad: el techo alcanzable está ~2 puntos por encima de lo que ya se entrega |
-| S9 | M3 | **Selección por `(cuadrante, corte)`** (unidad agregada 2026-08-07, precondición de M3.1 — §7.1) | M3.1a | ⬜ |
+| S9 | M3 | **Selección por `(cuadrante, corte)`** (unidad agregada 2026-08-07, precondición de M3.1 — §7.1) | M3.1a | ❌ **2026-08-07 — CERRADA CON RESULTADO NEGATIVO (§7.1).** `backtests/seleccion-por-cuadrante-real-2026-08-07.md`, corrida `a79a9b23676b`, **137,5 s y cero modelos reajustados**. Gana h=1 (0,3182 contra 0,3230 del champion) y **pierde los otros tres** (+7,4% / +6,0% / +4,1%); sesgo total h=6 **−0,0600**, fuera del ±5%. **La cota de §6.8 punto 5 (8,7%–2,3%) era hindsight y no se realizó.** Mecanismo: agrupar **correlaciona** la varianza de selección en vez de reducirla — el ganador de `suave` cambia 7 veces en 18 cortes y arrastra el 86% del peso cada vez. Gana fuerte en `lumpy` (−11%/−15%/−9%) pero pesa 0,33%. **386 tests** (14 nuevos), `ruff` limpio, **9/9 mutaciones caen**. El `champion` recalculado reproduce M2.5 al cuarto decimal: el camino por defecto no se movió |
 | S9 | M3 | Reconciliación jerárquica | M3.1 | ⬜ |
 | S10–S11 | M3 | Propensión cliente×producto · RFM deflactado | M3.2–M3.3 | ⬜ |
 | S12 | M3 | Clientes nuevos · cierre de métricas por nivel | M3.4 | ⬜ |

@@ -26,6 +26,8 @@ producción no puede depender de una herramienta de desarrollo, y de hecho no po
 `ModuleNotFoundError`. El generador ahora importa de acá.
 """
 
+from collections.abc import Iterable
+
 import numpy as np
 import pandas as pd
 
@@ -151,6 +153,51 @@ def clasificar_series(
             }
         )
     return pd.DataFrame(filas)
+
+
+def clasificar_por_corte(
+    datos: pd.DataFrame,
+    cortes: Iterable[pd.Timestamp],
+    columnas_id: list[str] | None = None,
+    columna_fecha: str = "anio_mes",
+    columna_objetivo: str = "unidades",
+    columna_corte: str = "corte",
+    ventana_meses: int = VENTANA_MESES,
+) -> pd.DataFrame:
+    """La clasificación de todas las series **una vez por corte**, con `hasta=corte`.
+
+    Es el uso 1 del encabezado —clasificar para **decidir**— y por eso cada corte se
+    clasifica con su propia ventana: en el corte `t` no se puede saber en qué cuadrante va
+    a caer una serie más adelante. Con el default de `clasificar_series` (último mes de los
+    datos) la decisión miraría el futuro, que es la trampa de `roadmap-motor.md` §12.2.
+
+    **Se calcula una vez y se reusa.** Es la parte cara de M3.1a: `clasificar_series` itera
+    en Python por serie, así que recalcularla dentro del bucle de selección la correría una
+    vez por corte y por candidato. Acá sale una sola vez y el resultado se pasa a
+    `modelado.seleccion.elegir_mejor_por_cuadrante`, que además lo acepta ya calculado para
+    que un script que necesite reportarlo no lo pague dos veces.
+
+    Devuelve formato largo: `columna_corte` + `columnas_id` + `cuadrante`, `adi`, `cv2`.
+    Una serie que en un corte todavía no vendió nada sale como `sin_actividad`, que es una
+    etiqueta legítima y **no** un faltante — ver `elegir_mejor_por_cuadrante`.
+    """
+    columnas_id = list(columnas_id) if columnas_id else ["id_producto"]
+    partes = []
+    for corte in sorted(pd.Timestamp(corte) for corte in cortes):
+        del_corte = clasificar_series(
+            datos,
+            columnas_id=columnas_id,
+            columna_fecha=columna_fecha,
+            columna_objetivo=columna_objetivo,
+            hasta=corte,
+            ventana_meses=ventana_meses,
+        )
+        del_corte.insert(0, columna_corte, corte)
+        partes.append(del_corte)
+
+    if not partes:
+        return pd.DataFrame(columns=[columna_corte, *columnas_id, "cuadrante", "adi", "cv2"])
+    return pd.concat(partes, ignore_index=True)
 
 
 def distribucion_cuadrantes(clasificacion: pd.DataFrame) -> dict[str, float]:
