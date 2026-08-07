@@ -303,7 +303,9 @@ Hay además una restricción del propio proyecto que decide la cuestión de hech
 
 ## ADR-015 — El compromiso de precisión se acota por horizonte: punto en h=1/h=3, intervalo en h=6/h=12
 
-**Estado:** **Propuesta (2026-08-05)** — a ratificar con el **Project Manager** y el **Analista Funcional**. Es la invocación explícita del **Riesgo 5 del Acta**, que ya pre-autoriza esta mitigación, pero mueve un **criterio de aceptación del Release 2** y el contenido de CU-03, así que no la ratifica el ML Specialist por su cuenta. **El gate interno de M2 no se relaja** — ver punto 5, que es la parte que no hay que leer al revés.
+**Estado:** ⛔ **REEMPLAZADA por ADR-018 (2026-08-06). No ratificar esta.** Quedó en `Propuesta` desde el 2026-08-05 y nunca se aceptó, así que no hay decisión que revertir. Se conserva completa —con sus dos actualizaciones— porque **el recorrido es el contenido**: es el registro de una decisión que se tomó con la evidencia disponible y que la medición posterior corrigió dos veces, primero en el argumento (ADR-016 tumbó el del sesgo) y después en el eje (M2.4 y M2.5 mostraron que la precisión varía 4 a 9 veces **entre cuadrantes** y 1,1 veces entre horizontes). Lo que sobrevive de acá está incorporado a ADR-018: los puntos 3, 5 y 6, y el intervalo como entregable del punto 2.
+
+*Estado original: Propuesta (2026-08-05) — a ratificar con el Project Manager y el Analista Funcional. Es la invocación explícita del **Riesgo 5 del Acta**, que ya pre-autoriza esta mitigación, pero mueve un **criterio de aceptación del Release 2** y el contenido de CU-03, así que no la ratifica el ML Specialist por su cuenta. **El gate interno de M2 no se relaja** — ver punto 5, que es la parte que no hay que leer al revés.*
 
 > ⚠️ **Actualización del 2026-08-05, el mismo día, ANTES de ratificar — la evidencia de abajo cambió. Léase junto con ADR-016.**
 >
@@ -415,3 +417,51 @@ Por (2) quedó descartada la mitad de la solución: darle al global el mismo tra
 **Alternativas descartadas:** (a) **promocionar el global solo** — descartada por el punto 2 (no cumple el gate a h=12) y por el sobre-pronóstico de `lumpy`/`intermitente`; (b) **promocionar el global y enrutar los cuadrantes intermitentes a baselines** — es más simple que el champion y probablemente casi tan bueno, pero **enrutar por cuadrante ya se midió peor que dejar competir libre** en M1.7 (§5.3) y elegir el ruteo mirando esta tabla es hindsight; si se quiere, se mide como variante propia con regla prospectiva; (c) **cambiar el árbitro de WAPE a una métrica sin ponderación por magnitud** (MASE agregado, o WAPE promediado por serie) — cambiaría el gate de M2 después de conocer el resultado, que es exactamente lo que ADR-015 y ADR-016 se cuidaron de no hacer; el desagregado por cuadrante da la misma información sin mover la vara; (d) **adoptar el P50 como estimador puntual a h=12** — descartada por el punto 3.
 
 **Docs impactados:** `motor/plan-diseno.md` §M2 (el criterio de promoción pasa de regla a resultado medido), `motor/roadmap-motor.md` §6 (fila M2.5), §6.7 (nuevo) y §9 (S8), `motor/scripts/README.md` (sección de `global_vs_baselines.py`), `motor/src/motor/backtesting/README.md` (los dos módulos nuevos). **Fuera del módulo, para el PM y el Analista:** el punto 4 — si el compromiso de precisión se expresa por cuadrante — registrado en `planning/roadmap.md` junto a las dos revisiones que ADR-015 ya tenía pendientes.
+
+## ADR-018 — El compromiso de precisión se expresa por cuadrante de comportamiento, no por horizonte (reemplaza a ADR-015)
+
+**Estado:** **Propuesta (2026-08-06)** — a ratificar con el **Project Manager** y el **Analista Funcional**. **Reemplaza a ADR-015**, que nunca se ratificó y quedó con tres correcciones encima. No se está revirtiendo una decisión aceptada: se consolidan en un solo documento las **tres entradas pendientes** de `planning/roadmap.md` que preguntaban lo mismo desde tres lados.
+
+**Contexto.** ADR-015 propuso acotar el compromiso de precisión **por horizonte**: punto en h=1/h=3, intervalo calibrado en h=6/h=12. Se apoyaba en dos argumentos y en tres semanas de medición pasó esto:
+
+1. **El argumento del sesgo se cayó.** ADR-016 mostró que el sub-pronóstico de horizonte largo (−5,2% / −6,0%) era del criterio de selección, no de los baselines: con selección prospectiva el piso cumple el ±5% en los cuatro horizontes, y el champion promovido en M2.5 también (−0,31% / +0,77% / −1,49% / −0,82%). **No hay nada que acotar por ese lado.**
+2. **El argumento de la varianza sigue en pie, pero apunta al eje equivocado.** M2.4 y M2.5 midieron que la precisión varía **muchísimo más entre cuadrantes de comportamiento que entre horizontes**:
+
+| WAPE del modelo promovido, grano producto | h=1 | h=12 |
+|---|---|---|
+| `suave` (58% de los productos, **86% del volumen**) | 0,295 | 0,323 |
+| `erratica` | 0,459 | 0,558 |
+| `intermitente` | 0,915 | 1,343 |
+| `lumpy` | 1,207 | 2,771 |
+
+**A horizonte fijo, el cuadrante mueve el error entre 4 y 9 veces; a cuadrante fijo, el horizonte lo mueve 1,1 veces en `suave`.** Un compromiso acotado por horizonte protege contra la fuente chica de variación y deja desprotegida a la grande: hoy el documento avisaría de varianza alta a 12 meses en un producto suave (WAPE 0,32) y no avisaría nada a 1 mes en uno lumpy (WAPE 1,21).
+
+Lo mismo con el intervalo (M2.4): la cobertura empírica agregada calibra (0,78–0,82 contra el 0,80 nominal) pero **por cuadrante se abre**: `suave` clava 0,80, `erratica` **sub-cubre 10 a 13 puntos en los cuatro horizontes**, e `intermitente`/`lumpy` sobre-cubren con intervalos de hasta **13,5 veces** la magnitud del real.
+
+**Y arreglar la calibración por post-proceso se probó y no alcanza** (medido 2026-08-06 sobre los checkpoints de M2.4, sin reajustar modelos, con calibración conformal CQR prospectiva por (cuadrante, horizonte) — `roadmap-motor.md` §6.9):
+
+- En `erratica` levanta la cobertura de 0,679 a **0,787** a h=1, pero el efecto **se apaga con el horizonte** y a **h=12 no mueve nada** (0,670 → 0,670): a 12 meses vista casi no hay error ya observado con el que calibrar sin mirar el futuro.
+- En `intermitente` **no puede hacer nada, y es estructural**: el **81,4%** de sus filas tiene `real == 0` y `P10 == 0`, así que el score de conformidad vale exactamente 0 y el cuantil 0,80 de esa distribución también. El intervalo no se puede encoger porque la distribución del score tiene un átomo en cero.
+- En `suave`, donde ya calibraba, **empeora** (0,801 → 0,770 a h=3).
+
+O sea: **la dispersión por cuadrante no es un defecto reparable, es la señal.** Una serie que vende a ráfagas es intrínsecamente menos predecible, y ningún modelo del backtest lo cambia — el piso de baselines tiene el mismo patrón.
+
+**Decisión.**
+
+1. **El criterio de aceptación cuantitativo del Release 2 se fija en los niveles agregados donde el negocio planifica** — **total y categoría** —, no a grano producto. Ahí el modelo promovido da WAPE **0,109 / 0,129 / 0,146 / 0,088** (total) y **0,143 / 0,165 / 0,201 / 0,175** (categoría), con sesgo dentro del ±5% en los cuatro horizontes. Es un compromiso real, medido y cumplido. **El WAPE a grano producto se documenta por cuadrante como diagnóstico, no como promesa**: prometerlo en un número único obligaría a elegir entre prometer 0,32 (y fallar en un tercio del catálogo) o prometer 1,2 (y subestimar el sistema en el 86% del volumen).
+2. **Lo que el producto le promete al usuario sobre un producto individual es el intervalo P10–P90, publicado junto a la predicción** — se conserva de ADR-015 punto 2 —, **pero el compromiso es publicarlo con su cobertura documentada por cuadrante, no que cubra el 80% en todos**. Medido y sostenible: 0,80 en `suave`, 0,67–0,79 en `erratica`, 0,83–0,92 en `intermitente`/`lumpy`. Prometer 0,80 uniforme sería prometer algo que sabemos que no se cumple.
+3. **El indicador de confianza de CU-03 pasa a depender del cuadrante del producto, no del horizonte.** Es el cambio de fondo respecto de ADR-015 punto 4, y sale directo de la tabla de arriba: la advertencia tiene que aparecer en un producto `lumpy` **también a 1 mes**, y no tiene por qué gritar en un producto `suave` a 12 meses. El cuadrante ya lo calcula el motor (`motor.clasificacion`, con `hasta=corte`) y viaja por serie, así que es implementable sin trabajo nuevo del modelo.
+4. **La amplitud del intervalo es parte del mensaje, no un defecto a esconder.** Un producto `lumpy` recibe un P10–P90 de hasta 13,5 veces su volumen: eso **es** la comunicación honesta de "no sabemos", y la UI no debe recortarlo ni normalizarlo para que se vea prolijo. Lo que sí hay que evitar es lo contrario — presentar un intervalo angosto donde sub-cubre (`erratica`).
+5. **Se mantiene de ADR-015, sin cambios:** el sesgo se publica en los cuatro horizontes **con su signo** (punto 3); h=6 y h=12 **no salen del alcance** (CU-06 y CU-07 los necesitan); y el gate interno del motor **no se relaja** por esto (punto 5) — de hecho M2 lo cumplió.
+6. **Se retira de ADR-015** el encuadre por horizonte de los puntos 1 y 2, y con él la invocación del **Riesgo 5 del Acta** ("acotar las métricas dándole mayor peso operativo al horizonte de 1 mes"): **esa mitigación ya no hace falta**, porque el sesgo de horizonte largo era del criterio de medición y se corrigió. El Acta debería registrar que el riesgo se evaluó, se midió y **no se invocó**, en vez de dejarlo abierto.
+
+**Consecuencias.**
+
+- **El Acta y el Plan de Pruebas ganan un criterio cumplible y pierden uno que no lo era.** El hito del R2 pasa a verificarse con dos números por horizonte (WAPE total y categoría, sesgo total) más una tabla de diagnóstico por cuadrante. Son menos números que las 16 celdas que salían de comprometer por cuadrante × horizonte, y más honestos que uno solo.
+- **CU-03 cambia de eje su advertencia**, y eso es trabajo de frontend en R4, no del motor: la señal (`cuadrante`) ya existe y ya se persiste por serie.
+- **No se promete una cobertura de intervalo que no se puede dar.** Es la diferencia entre documentar 0,67 en `erratica` y prometer 0,80 sabiendo que da 0,67.
+- **Queda una deuda técnica identificada y acotada:** la sub-cobertura de `erratica`. No es reparable por post-proceso (medido), así que si se quiere cerrar hay que atacarla en el modelo — más features de volatilidad, o un modelo de dispersión aparte. **No se abre unidad de trabajo por ahora**: `erratica` es el 11% de los productos y el 13% del volumen, y el costo/beneficio no está claro. Queda registrado en `roadmap-motor.md` §12.
+
+**Alternativas descartadas:** (a) **ratificar ADR-015 como está** — su argumento principal (el sesgo) ya no se sostiene y acota por el eje que menos varía; (b) **comprometer WAPE por cuadrante × horizonte** — 16 criterios de aceptación en un Acta es inmanejable y además el cuadrante de un producto **cambia con el tiempo**, así que el compromiso sería sobre un conjunto móvil; (c) **calibrar el intervalo para cumplir 0,80 uniforme** — medido y descartado arriba: no alcanza en `erratica`, es imposible en `intermitente` por el átomo en cero, y degrada `suave`; (d) **excluir del producto los cuadrantes irregulares** — son el 31% de los productos y el usuario igual tiene que comprarlos; darle un intervalo ancho es más útil que no darle nada, y el piso de baselines los cubre razonablemente (es lo que el champion usa ahí); (e) **prometer a grano producto un WAPE laxo que cubra a todos** (~1,2) — describe mal al 86% del volumen y volvería inútil el criterio.
+
+**Docs impactados:** **Acta de Proyecto UTN** (*Riesgos* 5: registrar que se evaluó y **no** se invocó, con el número; hito de validación del R2: criterios a nivel total y categoría + tabla de diagnóstico por cuadrante), **Casos de Uso UTN** (**CU-03**: el indicador de confianza pasa a ser el **intervalo P10–P90** —esto reemplaza al badge de MAPE que ADR-008 dejó sin dueño— y la advertencia de varianza pasa a depender del **cuadrante**, no del horizonte), **Plan de Pruebas UTN** (aceptación del R2 por nivel de agregación; la cobertura del intervalo se **documenta** por cuadrante, no se exige uniforme), **Matriz de Gestión de Riesgos UTN** (la fila de RMSE/MAPE pasa a WAPE/sesgo por nivel — ver ADR-008), `motor/plan-diseno.md` y `motor/roadmap-motor.md` §6.9 (la medición de calibración) y §12 (la deuda de `erratica`). Los formales los editan el **PM** (Acta, Matriz de Riesgos) y el **Analista Funcional** (CU, Plan de Pruebas).
