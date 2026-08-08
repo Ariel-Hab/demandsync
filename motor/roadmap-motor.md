@@ -1952,11 +1952,17 @@ reproduce lo ya congelado.
 
 WAPE por nivel y horizonte (h=1 / 3 / 6 / 12):
 
-| nivel | `sin_reconciliar` | `bottom_up` | `ols` | `wls_struct` |
-|---|---|---|---|---|
-| **producto** | 0,3230 / 0,3667 / 0,3928 / 0,3644 | **= idem** | 0,3946 / 0,4918 / 0,5324 / 0,4304 | 0,3401 / 0,3909 / 0,4219 / 0,3787 |
-| **categoría** | – / 0,1783 / 0,2200 / 0,1764 | 0,1428 / 0,1648 / 0,2010 / 0,1754 | 0,1552 / 0,2069 / 0,2511 / 0,1892 | **0,1346 / 0,1564 / 0,1989 / 0,1642** |
-| **total** | 0,0988 / 0,1089 / 0,1233 / 0,0872 | 0,1088 / 0,1294 / 0,1458 / 0,0881 | **0,0981 / 0,1051 / 0,1185** / 0,0854 | 0,1029 / 0,1150 / 0,1417 / **0,0805** |
+| nivel | series | `sin_reconciliar` | `bottom_up` | `ols` | `wls_struct` |
+|---|---|---|---|---|---|
+| **producto** | 2.128 | 0,3230 / 0,3667 / 0,3928 / 0,3644 | **= idem** | 0,3946 / 0,4918 / 0,5324 / 0,4304 | 0,3401 / 0,3909 / 0,4219 / 0,3787 |
+| **categoría×lab** | 206 | 0,2248 / 0,2606 / 0,3051 / 0,2771 | **0,2153 / 0,2542 / 0,2882 / 0,2687** | 0,2776 / 0,3626 / 0,4128 / 0,3212 | 0,2228 / 0,2627 / 0,3040 / 0,2721 |
+| **laboratorio** | 77 | 0,2004 / 0,2333 / 0,2619 / 0,2111 | *0,1805* / 0,2129 / *0,2418* / 0,2097 | 0,2103 / 0,2609 / 0,2828 / 0,2200 | 0,1846 / *0,2116* / 0,2468 / *0,2063* |
+| **categoría** | 12 | 0,1515 / 0,1783 / 0,2200 / 0,1764 | 0,1428 / 0,1648 / 0,2010 / 0,1754 | 0,1552 / 0,2069 / 0,2511 / 0,1892 | **0,1346 / 0,1564 / 0,1989 / 0,1642** |
+| **total** | 1 | 0,0988 / 0,1089 / 0,1233 / 0,0872 | 0,1088 / 0,1294 / 0,1458 / 0,0881 | **0,0981 / 0,1051 / 0,1185** / 0,0854 | 0,1029 / 0,1150 / 0,1417 / **0,0805** |
+
+*(En negrita el ganador del nivel; `laboratorio` en itálica porque se reparte entre `bottom_up` y
+`wls_struct` según el horizonte. La columna `series` es la que hay que tener a la vista al leer
+un canje: los cinco niveles no valen lo mismo — ver punto 2.)*
 
 **1. Ningún método gana en todos los niveles, y el reparto es nítido.** `bottom_up` es el mejor
 a grano **producto** (no lo puede empeorar: no lo toca) y el peor a **total**; `ols` es el mejor
@@ -1995,6 +2001,87 @@ fue a favor de `bottom_up`, el asterisco no lo cambia** — un base agregado mej
 rivales más fuertes justo en los niveles donde ya ganaban, no en producto, que es donde se
 decidió.
 
+**5. Elegir el mejor modelo *en cada nivel agregado* ya se hace, y solo paga en `total`.** La
+pregunta natural al ver la tabla —"si elegimos modelo por producto, ¿no habría que elegirlo
+también por categoría y por laboratorio, para aprovechar los ganadores respectivos?"— **ya está
+respondida por la corrida**: `reconciliar_jerarquia.py:236` corre `_champion` en los dos lados,
+así que las 296 series agregadas eligen su ganador por `(serie, corte)` con la misma regla
+prospectiva y la misma cascada de ADR-016. **Eso es exactamente la columna `sin_reconciliar`.**
+Y pierde: `bottom_up` le gana en `laboratorio` **12 de 12** horizontes, en `categoría×lab` 11 de
+12 y en `categoría` 10 de 12. Solo en `total` la selección directa gana (11 de 12).
+
+- **El mecanismo es el de M3.1a visto del otro lado.** `bottom_up` ya aprovecha ganadores —2.128
+  de ellos— y al sumarlos los errores idiosincráticos se cancelan parcialmente. Un pronóstico
+  directo de "la categoría CLINICO" es **una sola decisión con un solo error y nada contra qué
+  cancelar**. Menos decisiones no es menos varianza: es varianza correlacionada.
+- **Solo la conclusión de `total` es limpia**, y por el desvío del punto 4: ahí la selección
+  directa gana **a pesar** del base recortado (7 candidatos contra 9), así que con el base
+  completo ganaría más. En `categoría`/`laboratorio` pierde **con** el handicap puesto, así que
+  no se puede afirmar que sea peor — solo que no alcanza con este set de candidatos.
+- **Y esa ganancia de `total` no se está desperdiciando: `ols` la captura, coherente.** `ols` da
+  0,0981 / 0,1051 / 0,1185 / 0,0854 contra 0,0988 / 0,1089 / 0,1233 / 0,0872 de la selección
+  directa: iguala o mejora en los cuatro horizontes. El base agregado no es trabajo tirado — es
+  lo que hace que MinT funcione arriba. Lo descarta `bottom_up`, y se paga a sabiendas.
+
+**6. ADR-018 ya cita los números de `bottom_up`, y coinciden por construcción — no por
+casualidad.** ADR-018 punto 1 fija el criterio de aceptación del R2 en WAPE **total
+0,109 / 0,129 / 0,146 / 0,088** y **categoría 0,143 / 0,165 / 0,201 / 0,175**. La tabla de
+arriba da 0,1088 / 0,1294 / 0,1458 / 0,0881 y 0,1428 / 0,1648 / 0,2010 / 0,1754: **dígito a
+dígito**. El ADR se escribió el 2026-08-06, un día antes de esta corrida, agregando el champion
+de M2.5 a total y categoría — que es **la definición de bottom-up**. Los dos caminos llegaron al
+mismo número sin buscarlo.
+
+> **Por qué importa para la decisión.** El criterio que el PM tiene pendiente de ratificar ya
+> está expresado en `bottom_up` y ya está cumplido. Adoptar otro método obligaría a **reescribir
+> un ADR que ya está en la mesa**, para mejorar un criterio que ya pasa, pagando entre 4% y 36%
+> en el grano donde el sistema decide. Esto refuerza el punto 2 desde afuera del motor.
+
+#### Camino descartado (2026-08-08): un método por nivel, con rangos que absorban la incoherencia
+
+Planteado al revisar la tabla, y vale registrarlo porque **es una idea razonable que alguien va a
+volver a proponer**: sacrificar la cohesión —usar `bottom_up` en producto, `wls_struct` en
+categoría y `ols` en total, cada nivel con su ganador— y publicar cada nivel como **rango en vez
+de punto**, de modo que el rango de la categoría contenga a la suma de los productos y la
+incoherencia nunca sea visible para el usuario.
+
+**El mecanismo funciona**: la coherencia es una restricción de presentación tanto como
+matemática, y un intervalo suficientemente ancho la absorbe. No se descarta por ingenuo. Se
+descarta por cuatro razones, en orden de peso:
+
+1. **El ancho que tapa la incoherencia también tapa la ganancia.** En categoría, la diferencia
+   entre `bottom_up` y `wls_struct` es **0,8 puntos de WAPE** (0,1428 contra 0,1346). El
+   intervalo que habría que publicar para un WAPE de ~0,14 mide del orden de **±20 puntos**. Se
+   pagaría un rediseño para ganar una diferencia ~25 veces más angosta que la banda en la que se
+   la presenta: **el lector no puede distinguir los dos métodos mirando la salida**.
+2. **Un intervalo que absorbe desacuerdo interno no es el mismo objeto que uno que comunica
+   incertidumbre.** El P10–P90 de ADR-018 punto 2 significa algo preciso: *el futuro de este
+   producto es genuinamente incierto en este rango, y lo medimos*. Por eso publica el 0,679 de
+   `erratica` en vez de prometer 0,80 (§12.0). El rango de este esquema tendría **dos** fuentes
+   adentro —la incertidumbre del futuro y el desacuerdo entre nuestros propios métodos— y el
+   usuario no puede separarlas. Cuando el comprador pregunte *"la categoría dice 1.000–1.300 y
+   los productos suman 1.150, ¿compro para 1.150 o para 1.300?"*, la respuesta honesta es
+   "depende de qué pantalla mirás". No es un fallo técnico: es de confianza. Y en DemandSync no
+   es hipotético — **CU-03 muestra el detalle por producto y las vistas agregadas son drill-downs
+   del mismo dato**: van a estar en la misma pantalla. *(El esquema sí cerraría si cada nivel lo
+   consumiera una audiencia que nunca ve la otra. No es este producto.)*
+3. **El insumo no existe.** M2.4 produjo P10/P50/P90 **solo a grano producto**; las 296 series
+   agregadas corrieron 6 baselines, ninguno de los cuales da cuantiles. Y no se arregla sumando:
+   **la suma de los P10 de 2.128 productos no es el P10 de la suma** —no salen todos bajos el
+   mismo mes—, así que el intervalo del agregado hay que estimarlo, no derivarlo.
+4. **Reconciliar cuantiles es bastante más duro que reconciliar puntos**, y encima el esquema
+   propone *no* reconciliar. Sería trabajo nuevo para sostener una salida que, por diseño, no
+   cierra.
+
+**Lo que sí se rescata, y es casi gratis:** la intuición de fondo —**rango en vez de punto en los
+niveles agregados**— no necesita romper la coherencia. Un solo método (`bottom_up`) más una
+**banda de error medida por nivel**, que ya está en la tabla de arriba: producto 0,32–0,39,
+categoría×lab 0,22–0,29, laboratorio 0,18–0,25, categoría 0,14–0,20, total 0,09–0,15. Los
+números siguen sumando, el usuario igual recibe un rango, y **el rango se angosta al subir de
+nivel**, que es información real y útil ("el total es tres veces más confiable que el producto
+individual"). Costo: cero corridas nuevas. ⚠️ **Se rotula como error típico histórico, no como
+intervalo de probabilidad** — confundirlo con el P10–P90 sería el pecado del punto 2 por la
+puerta de atrás. La versión probabilística de verdad queda como **M4.5** (§8), candidata.
+
 #### Tres cosas para el que siga
 
 - **`hierarchicalforecast` asume un panel rectangular y el del motor no lo es.** Costó tres
@@ -2020,8 +2107,50 @@ decidió.
 | **M4.2** | **Implementación PostgreSQL del repositorio** + swap de la de archivos. **Única dependencia dura de R1** | S13–S14 | El mismo motor corre contra archivos y contra la base, sin cambios en modelos |
 | **M4.3** | Punto de entrada `motor.correr(fecha_corte)` para el job batch; contrato de invocación **a acordar con el Backend Dev** (no lo defino unilateralmente) | S14 | Firma acordada + smoke test desde el job |
 | **M4.4** | Monitoreo de degradación: error realizado del mes vs backtest, como insumo de detección de drift | S15 | Reporte mensual automático |
+| **M4.5** | **Intervalos probabilísticos por nivel de agregación** — *candidata, no comprometida* (§8.1) | — | Ver §8.1 |
 
 **Gate de salida de M4 = Definición de "listo" del Release 2** (`plan-diseno.md`), los 6 puntos: arnés reproducible, baselines congelados, global ganando en producto/categoría a h=1/h=3, sesgo total ±5%, predicciones con intervalos consultables <2s, CP-SEG-01 y CP-INF-01..05 en verde.
+
+### 8.1 M4.5 — Intervalos probabilísticos por nivel de agregación (candidata, 2026-08-08)
+
+**No está comprometida ni tiene semana asignada.** Se registra acá porque salió de una discusión
+concreta de M3.1 (§7.3, *camino descartado*) y es una unidad atractiva con un entregable claro,
+no una idea suelta. Si se abre, se le asigna semana y se reconfirma el gate.
+
+**De dónde sale.** Hoy el motor produce intervalos **solo a grano producto** (M2.4: P10/P50/P90
+del global en modo cuantil) y ADR-018 punto 2 los convierte en la promesa del producto a nivel de
+ítem individual. **Arriba no hay nada**: los niveles agregados salen como punto seco. La salida
+barata que §7.3 propone —acompañar cada agregado con su banda de error histórico medido— tapa el
+hueco de comunicación, pero **no es un intervalo de probabilidad** y se rotula distinto.
+
+**Qué haría la unidad.** Cuantiles en los cinco niveles de la estructura agrupada, con
+reconciliación probabilística, para que el rango de la categoría sea un objeto estimado y no
+la suma ingenua de los rangos de sus productos (**la suma de los P10 no es el P10 de la suma**).
+
+**Precondición dura:** el **defecto de M2.3** (§7.2) tiene que estar arreglado. Los baselines que
+hoy cubren los niveles agregados no producen cuantiles; el único candidato que sí lo hace es
+`GlobalLGBM` con `objective="quantile"`, y hoy **no corre sobre series agregadas** porque
+`construir_features` exige `precio_prom` y `revenue`, que una serie agregada no tiene. Sin eso,
+la unidad no tiene con qué estimar el cuantil de arriba.
+
+**Gate de salida propuesto — tres puntos, y el tercero es el que la justifica o la mata:**
+
+1. **Cobertura empírica del P10–P90 reportada por nivel × horizonte**, con la misma disciplina de
+   M2.4: se reporta, no se tunea para llegar. Con desagregado por cuadrante en el nivel producto.
+2. **La coherencia queda declarada explícitamente**: o la reconciliación probabilística la
+   garantiza y se verifica como en `reconciliar`, o se documenta que los niveles no cierran y por
+   qué. Lo que no se acepta es que quede indefinida.
+3. ⚠️ **Tiene que informar más que la banda gratis.** Si el intervalo probabilístico por nivel no
+   le dice al usuario nada que no le diga ya la banda de error típico medida en el backtest,
+   **no se adopta**: sería complejidad sin información. Este punto se declara ahora, antes de
+   medir, precisamente porque después de ver una tabla linda cuesta aplicarlo.
+
+**Lo que esta unidad NO es**, y conviene que quede escrito: no es la puerta trasera para volver a
+"un método por nivel". Ese camino se descartó en §7.3 por cuatro razones, y tres de ellas
+sobreviven a tener intervalos arriba — en particular la **2**, que es la de fondo: un intervalo
+que absorbe desacuerdo entre nuestros propios métodos no es el mismo objeto que uno que comunica
+incertidumbre del negocio. Si con el insumo en la mano se quiere reabrir la pregunta, se reabre
+**con esa distinción explícita**, no aprovechando que ahora hay rangos.
 
 ---
 
@@ -2048,11 +2177,12 @@ decidió.
 | S9 | M3 | **Features de dispersión** (unidad agregada 2026-08-07) | M3.0 | ❌ **2026-08-07 — CERRADA CON RESULTADO NEGATIVO (§6.10).** La hipótesis se rechaza: en `erratica` compra 0,1 a 2,3 puntos contra una brecha de 10 a 13 y **derrumba `intermitente`/`lumpy` a h=1** (el `P10 == 0` exacto cae del 82,1% al 31,4% de las filas). La dispersión ya era inferible de los lags. `usar_dispersion` queda en `False`; código, tests y tabla se conservan para que el negativo sea reproducible |
 | — | M3 | **Cierre de la deuda de `erratica`** | §12.0 | ✅ **2026-08-07 — es irreducible, medido.** Cobertura **dentro** de la muestra de entrenamiento 0,7782 contra **0,6790** a futuro (nominal 0,80): de los 12 puntos de brecha, **~2 son del modelo y ~10 son que la dispersión futura no está en el pasado de la serie**. Cuatro hipótesis descartadas con medición. No se abre unidad: el techo alcanzable está ~2 puntos por encima de lo que ya se entrega |
 | S9 | M3 | **Selección por `(cuadrante, corte)`** (unidad agregada 2026-08-07, precondición de M3.1 — §7.1) | M3.1a | ❌ **2026-08-07 — CERRADA CON RESULTADO NEGATIVO (§7.1).** `backtests/seleccion-por-cuadrante-real-2026-08-07.md`, corrida `a79a9b23676b`, **137,5 s y cero modelos reajustados**. Gana h=1 (0,3182 contra 0,3230 del champion) y **pierde los otros tres** (+7,4% / +6,0% / +4,1%); sesgo total h=6 **−0,0600**, fuera del ±5%. **La cota de §6.8 punto 5 (8,7%–2,3%) era hindsight y no se realizó.** Mecanismo: agrupar **correlaciona** la varianza de selección en vez de reducirla — el ganador de `suave` cambia 7 veces en 18 cortes y arrastra el 86% del peso cada vez. Gana fuerte en `lumpy` (−11%/−15%/−9%) pero pesa 0,33%. **386 tests** (14 nuevos), `ruff` limpio, **9/9 mutaciones caen**. El `champion` recalculado reproduce M2.5 al cuarto decimal: el camino por defecto no se movió |
-| S9 | M3 | Reconciliación jerárquica | M3.1 | ✅ **2026-08-07 (§7.2 / §7.3) — se adopta `bottom_up`.** `motor/src/motor/reconciliacion/` + `scripts/reconciliar_jerarquia.py`; tabla en `backtests/reconciliacion-real-2026-08-07.md`. **La jerarquía del plan no era jerarquía** (47 de 77 laboratorios cruzan categorías, 89% de los productos): pasó a **estructura agrupada** de 5 niveles, 2.424 series. **61,6 min** el backtest de las 296 agregadas + **0,6 min** reconciliar. **Ningún método gana en todos los niveles:** `bottom_up` es el mejor en producto (no lo toca) y el peor en total; `ols` el mejor en total; `wls_struct` gana categoría en los cuatro horizontes. Se adopta `bottom_up` porque **el canje de `wls_struct` —+6% en categoría por −6% en producto— va contra el grano en que el DSS decide** (§6.8). **`mint_shrink` no es estimable**: su covarianza pide un panel completo y solo 1 de 18 meses lo tiene (275 productos con primera venta posterior al inicio). Control: `bottom_up` a grano producto reproduce **exacto** el champion de M2.5. **25 tests**, `ruff` limpio, **8/8 mutaciones caen** |
+| S9 | M3 | Reconciliación jerárquica | M3.1 | ✅ **2026-08-07 (§7.2 / §7.3) — se adopta `bottom_up`.** `motor/src/motor/reconciliacion/` + `scripts/reconciliar_jerarquia.py`; tabla en `backtests/reconciliacion-real-2026-08-07.md`. **La jerarquía del plan no era jerarquía** (47 de 77 laboratorios cruzan categorías, 89% de los productos): pasó a **estructura agrupada** de 5 niveles, 2.424 series. **61,6 min** el backtest de las 296 agregadas + **0,6 min** reconciliar. **Ningún método gana en todos los niveles:** `bottom_up` es el mejor en producto (no lo toca) y el peor en total; `ols` el mejor en total; `wls_struct` gana categoría en los cuatro horizontes. Se adopta `bottom_up` porque **el canje de `wls_struct` —+6% en categoría por −6% en producto— va contra el grano en que el DSS decide** (§6.8). **`mint_shrink` no es estimable**: su covarianza pide un panel completo y solo 1 de 18 meses lo tiene (275 productos con primera venta posterior al inicio). Control: `bottom_up` a grano producto reproduce **exacto** el champion de M2.5. **25 tests**, `ruff` limpio, **8/8 mutaciones caen**. **Dos cosas anotadas el 2026-08-08 al revisar la tabla (§7.3 puntos 5-6):** elegir el mejor modelo *en cada nivel* ya se hacía —es la columna `sin_reconciliar`— y **solo paga en `total`**, donde `ols` ya la captura coherente; y **ADR-018 cita los números de `bottom_up` dígito a dígito**, por construcción, así que el criterio del R2 ya está expresado en el método adoptado. **Camino descartado y registrado:** un método por nivel con rangos que absorban la incoherencia — el ancho que la tapa también tapa la ganancia (0,8 puntos de WAPE dentro de una banda de ±20). Deja **M4.5** como candidata (§8.1) |
 | S10–S11 | M3 | Propensión cliente×producto · RFM deflactado | M3.2–M3.3 | ⬜ |
 | S12 | M3 | Clientes nuevos · cierre de métricas por nivel | M3.4 | ⬜ |
 | S13–S14 | M4 | Corridas versionadas · swap a PostgreSQL | M4.1–M4.2 | ⬜ |
 | S15 | M4 | Invocación batch · monitoreo de degradación | M4.3–M4.4 | ⬜ |
+| — | M4 | Intervalos probabilísticos por nivel (**candidata, sin semana ni compromiso** — §8.1) | M4.5 | ⬜ |
 
 **Hitos ya cerrados:** M0 — EDA y auditoría de datos ✅ 2026-07-15 (`eda/eda-2026-07-15.md`).
 
